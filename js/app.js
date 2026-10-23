@@ -85,23 +85,20 @@
   }
 
   // ---------- step 2: roads + network ----------
-  const covers = (box, bbox) => box && box[0] <= bbox[0] && box[1] <= bbox[1] && box[2] >= bbox[2] && box[3] >= bbox[3];
 
   async function afterKmz() {
     clear("connectors"); clear("newRoads");
     $("roads-loaded").hidden = true; $("roads-empty").hidden = false;
-    const osm = await Store.get("osm");
-    if (osm && covers(osm.box, wandrer.bbox)) await buildNetwork(osm);
+    const osm = await Osm.cached(wandrer.bbox);
+    if (osm) await buildNetwork(osm);
     else say("roads-msg", "");
   }
 
-  async function getRoads() {
+  async function getRoads(force) {
     if (!wandrer) return;
     setBusy(true);
     try {
-      const osm = await Osm.fetchRoads(wandrer.bbox, m => say("roads-msg", m));
-      say("roads-msg", "Saving roads in this browser...");
-      await Store.set("osm", osm);
+      const osm = await Osm.fetchRoads(wandrer.bbox, m => say("roads-msg", m), force);
       await buildNetwork(osm);
     } catch (err) {
       console.error(err);
@@ -145,8 +142,9 @@
 
   function setBusy(b) { $("get-roads").disabled = b; $("refresh-roads").disabled = b; }
 
-  $("get-roads").addEventListener("click", getRoads);
-  $("refresh-roads").addEventListener("click", getRoads);
+  $("get-roads").addEventListener("click", () => getRoads(false));
+  $("refresh-roads").addEventListener("click", () => getRoads(true));
+  Store.del("osm"); // single-request cache from v2, replaced by tiles
   $("show-connectors").addEventListener("change", e => {
     if (!layers.connectors) return;
     e.target.checked ? layers.connectors.addTo(map) : map.removeLayer(layers.connectors);
