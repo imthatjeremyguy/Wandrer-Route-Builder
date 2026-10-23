@@ -134,8 +134,9 @@
   function showNetStats(net) {
     const s = net.stats;
     $("roads-empty").hidden = true; $("roads-loaded").hidden = false;
-    const pct = s.untraveledM ? Math.round(100 * s.newM / s.untraveledM) : 0;
-    $("net-new").textContent = `${(s.newM * M2MI).toFixed(2)} mi (${pct}%)`;
+    // one decimal, rounded down so a near-miss never shows as 100%
+    const pct = s.untraveledM ? Math.min(100, Math.floor(1000 * s.newM / s.untraveledM) / 10) : 0;
+    $("net-new").textContent = `${(s.newM * M2MI).toFixed(2)} mi (${pct.toFixed(1)}%)`;
     $("net-ride").textContent = `${Math.round(s.rideableM * M2MI).toLocaleString()} mi`;
     $("net-date").textContent = fmtDate(net.osmDate);
     const dl = fmtSecs(net.downloadMs ?? 0);
