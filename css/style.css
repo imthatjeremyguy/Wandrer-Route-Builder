@@ -112,6 +112,7 @@ body {
 .plan-k { display: block; font-size: 0.8rem; color: var(--sign-ink-soft); }
 .plan-v { display: block; font-weight: 600; font-variant-numeric: tabular-nums; }
 .btn-small { padding: 6px 12px 4px; font-size: 0.9rem; white-space: nowrap; }
+#shape-tools { margin-bottom: 12px; }
 #build-route { margin: 4px 0 16px; width: 100%; }
 .btn-pair { display: flex; gap: 6px; }
 .btn-row { display: flex; gap: 10px; flex-wrap: wrap; }

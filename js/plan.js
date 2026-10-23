@@ -99,9 +99,13 @@
     const line = L.polyline([], { color: "#12573a", weight: 2, interactive: false }).addTo(map);
     const rubber = L.polyline([], { color: "#12573a", weight: 2, dashArray: "4 4", interactive: false }).addTo(map);
     const dots = L.layerGroup().addTo(map);
-    const hint = () => say(pts.length < 3
-      ? `Click around the area to add corners (${pts.length} so far). Esc cancels.`
-      : "Click the first corner, double-click, or press Enter to finish. Backspace undoes a corner.");
+    const hint = () => {
+      say(pts.length < 3
+        ? `Click around the area to add corners (${pts.length} so far). Right-click or Ctrl+Z undoes one, Esc cancels.`
+        : "Click the first corner, double-click, or press Enter to finish. Right-click or Ctrl+Z undoes a corner.");
+      $("undo-corner").disabled = !pts.length;
+      $("finish-shape").disabled = pts.length < 3;
+    };
     const redraw = () => {
       line.setLatLngs(pts);
       dots.clearLayers();
@@ -125,18 +129,25 @@
     };
     const onDbl = e => { L.DomEvent.stop(e); finish(); };
     const onMove = e => { rubber.setLatLngs(pts.length ? [pts.at(-1), e.latlng] : []); };
+    const undo = () => { if (pts.length) { pts.pop(); redraw(); rubber.setLatLngs([]); } };
     const onKey = e => {
       if (e.key === "Enter") { e.preventDefault(); finish(); }
-      else if (e.key === "Backspace" && pts.length) { e.preventDefault(); pts.pop(); redraw(); }
+      else if (e.key === "Backspace" || ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === "z")) { e.preventDefault(); undo(); }
     };
+    const onRight = e => { L.DomEvent.preventDefault(e.originalEvent); undo(); };
     function cleanup() {
-      map.off("click", onClick); map.off("dblclick", onDbl); map.off("mousemove", onMove);
+      map.off("click", onClick); map.off("dblclick", onDbl); map.off("mousemove", onMove); map.off("contextmenu", onRight);
       document.removeEventListener("keydown", onKey);
+      $("shape-tools").hidden = true;
+      $("undo-corner").onclick = $("finish-shape").onclick = null;
       [line, rubber, dots].forEach(l => map.removeLayer(l));
       map.doubleClickZoom.enable(); el.classList.remove("picking"); mode = null; cancelMode.fn = null;
     }
-    map.on("click", onClick); map.on("dblclick", onDbl); map.on("mousemove", onMove);
+    map.on("click", onClick); map.on("dblclick", onDbl); map.on("mousemove", onMove); map.on("contextmenu", onRight);
     document.addEventListener("keydown", onKey);
+    $("shape-tools").hidden = false;
+    $("undo-corner").onclick = undo;
+    $("finish-shape").onclick = finish;
     cancelMode.fn = cleanup;
     hint();
   }
