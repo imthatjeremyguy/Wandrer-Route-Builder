@@ -6,10 +6,11 @@
 
   // ---------- map ----------
   const map = L.map("map", { zoomControl: true }).setView([39.7684, -86.1581], 11); // Indianapolis
-  const dark = window.matchMedia?.("(prefers-color-scheme: dark)").matches;
-  L.tileLayer(`https://{s}.basemaps.cartocdn.com/${dark ? "dark_all" : "light_all"}/{z}/{x}/{y}{r}.png`, {
-    attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> &copy; <a href="https://carto.com/">CARTO</a>',
+  // Standard OSM tiles (no key needed); shown in grayscale via CSS so Wandrer red stands out
+  L.tileLayer("https://tile.openstreetmap.org/{z}/{x}/{y}.png", {
+    attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors',
     maxZoom: 19,
+    className: "base-tiles",
   }).addTo(map);
   let untraveledLayer = null;
 

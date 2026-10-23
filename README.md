@@ -6,6 +6,8 @@ Runs entirely in the browser on GitHub Pages. Your Wandrer KMZ export is read lo
 
 ## Use it
 
+Site: https://imthatjeremyguy.github.io/Wandrer-Route-Builder/
+
 1. On the Wandrer Big Map, zoom to the area you want, click Download, and choose KML/KMZ, Bike.
 2. Open the site and upload the KMZ from your email.
 

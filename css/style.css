@@ -111,6 +111,10 @@ body {
 /* ---------- map ---------- */
 #map { height: 100%; width: 100%; background: var(--page); }
 .leaflet-container { font-family: var(--font); }
+.base-tiles { filter: grayscale(1) contrast(0.9) brightness(1.04); }
+@media (prefers-color-scheme: dark) {
+  .base-tiles { filter: grayscale(1) invert(1) brightness(0.85) contrast(0.85); }
+}
 
 .drop-hint {
   position: fixed;
