@@ -9,7 +9,9 @@
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Overpass:wght@400;600;800&display=swap" rel="stylesheet">
   <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.css">
-  <link rel="stylesheet" href="css/style.css">
+  <!-- bump APP_VERSION and the ?v= tags on every release so browsers fetch fresh files -->
+  <script>window.APP_VERSION = "2";</script>
+  <link rel="stylesheet" href="css/style.css?v=2">
 </head>
 <body>
   <main class="layout">
@@ -43,6 +45,28 @@
         <p class="msg" id="msg" role="status"></p>
       </section>
 
+      <section class="step" id="step-roads" hidden>
+        <h2>Road network</h2>
+
+        <div id="roads-empty">
+          <p>Download OpenStreetMap roads around your Wandrer map. A whole county takes a minute or two.</p>
+          <button class="btn" id="get-roads" type="button">Get roads</button>
+        </div>
+
+        <div id="roads-loaded" hidden>
+          <dl class="facts">
+            <div><dt>New road matched</dt><dd id="net-new">-</dd></div>
+            <div><dt>Rideable roads</dt><dd id="net-ride">-</dd></div>
+            <div><dt>Roads as of</dt><dd id="net-date">-</dd></div>
+            <div><dt>Build time</dt><dd id="net-time">-</dd></div>
+          </dl>
+          <label class="check"><input type="checkbox" id="show-connectors" checked> Show connector roads</label>
+          <button class="btn btn-quiet" id="refresh-roads" type="button">Refresh roads</button>
+        </div>
+
+        <p class="msg" id="roads-msg" role="status"></p>
+      </section>
+
       <footer class="panel-foot">
         <p>Your KMZ stays in this browser. Nothing is uploaded.</p>
       </footer>
@@ -54,8 +78,9 @@
 
   <script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.js"></script>
   <script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
-  <script src="js/store.js"></script>
-  <script src="js/kmz.js"></script>
-  <script src="js/app.js"></script>
+  <script src="js/store.js?v=2"></script>
+  <script src="js/kmz.js?v=2"></script>
+  <script src="js/osm.js?v=2"></script>
+  <script src="js/app.js?v=2"></script>
 </body>
 </html>

@@ -102,6 +102,12 @@ body {
   outline-offset: 2px;
 }
 
+.step + .step { border-top: 1px solid rgba(255,255,255,0.25); padding-top: 18px; }
+.btn[disabled] { opacity: 0.5; cursor: progress; }
+.check { display: flex; align-items: center; gap: 8px; margin: 0 0 14px; cursor: pointer; }
+.check input { width: 18px; height: 18px; accent-color: var(--paint); }
+.check input:focus-visible { outline: 3px solid var(--paint); outline-offset: 2px; }
+
 .msg { min-height: 1.2em; margin: 12px 0 0 !important; font-size: 0.9rem; }
 .msg.error { color: #ffd2cc; }
 
