@@ -247,6 +247,7 @@
     $("route-eff").textContent = `${Math.round(100 * r.newM / r.totalM)}%`;
     $("route-repeat").textContent = `${fmtMi(r.repeatM)} mi`;
     $("route-time").textContent = `${(r.ms / 1000).toFixed(1)} s`;
+    stopPlay();
     if (!keepView) $("route-result").scrollIntoView({ block: "nearest", behavior: matchMedia("(prefers-reduced-motion: reduce)").matches ? "auto" : "smooth" });
     const notes = [];
     if (r.dropped) notes.push(`${r.dropped} new road piece${r.dropped > 1 ? "s" : ""} can't be reached legally from this start and ${r.dropped > 1 ? "were" : "was"} skipped.`);
@@ -263,39 +264,81 @@
   }
 
   // ---------- play + GPX ----------
-  let playTrail = null, playRaf = null;
-  function stopPlay() {
+  /* ---- route player: play / pause, scrub slider, speed ----
+   * P holds the route's points with cumulative distance so the dot moves at a steady pace. */
+  let playTrail = null, playRaf = null, P = null;
+  const SLIDER_MAX = 1000;
+
+  function playerData() {
+    if (P && P.route === route) return P;
+    const pts = route.coords.map(([x, y]) => L.latLng(y, x));
+    const cum = [0];
+    for (let i = 1; i < pts.length; i++) cum.push(cum[i - 1] + pts[i - 1].distanceTo(pts[i]));
+    return (P = { route, pts, cum, total: cum.at(-1) || 1, pos: 0 });
+  }
+  /** index of the segment containing distance d (binary search) */
+  function segAt(d) {
+    const c = P.cum; let lo = 0, hi = c.length - 2;
+    while (lo < hi) { const m = (lo + hi + 1) >> 1; if (c[m] <= d) lo = m; else hi = m - 1; }
+    return lo;
+  }
+  function renderAt(d) {
+    P.pos = Math.max(0, Math.min(P.total, d));
+    const i = segAt(P.pos), a = P.pts[i], b = P.pts[Math.min(i + 1, P.pts.length - 1)];
+    const f = (P.pos - P.cum[i]) / ((P.cum[i + 1] - P.cum[i]) || 1);
+    const here = L.latLng(a.lat + (b.lat - a.lat) * f, a.lng + (b.lng - a.lng) * f);
+    if (!playTrail) playTrail = L.polyline([], { color: "#0b2e66", weight: 5, opacity: 0.85, interactive: false }).addTo(map);
+    if (!playDot) playDot = L.circleMarker(here, { radius: 7, color: "#fff", weight: 2, fillColor: ROUTE, fillOpacity: 1, interactive: false }).addTo(map);
+    // grow the trail while moving forward; rebuild only after a jump backwards
+    const ll = playTrail.getLatLngs();
+    if (P.ti !== undefined && i >= P.ti && ll.length) {
+      ll.pop();
+      for (let k = P.ti + 1; k <= i; k++) ll.push(P.pts[k]);
+      ll.push(here);
+      playTrail.setLatLngs(ll);
+    } else playTrail.setLatLngs(P.pts.slice(0, i + 1).concat([here]));
+    P.ti = i;
+    playDot.setLatLng(here);
+    $("play-pos").value = Math.round(P.pos / P.total * SLIDER_MAX);
+    $("play-mi").textContent = `${fmtMi(P.pos)} of ${fmtMi(P.total)} mi`;
+  }
+  function pausePlay() {
     if (playRaf) { cancelAnimationFrame(playRaf); playRaf = null; }
     playTimer = null;
+    $("play-route").textContent = "Play";
+  }
+  /** pause and remove the dot and trail (new route, cleared route, optimizing) */
+  function stopPlay() {
+    pausePlay();
     if (playDot) { map.removeLayer(playDot); playDot = null; }
     if (playTrail) { map.removeLayer(playTrail); playTrail = null; }
-    $("play-route").textContent = "Play route";
+    P = null;
+    $("play-pos").value = 0;
+    $("play-mi").textContent = route ? `0.0 of ${fmtMi(route.totalM)} mi` : "";
   }
   function play() {
     if (!route) return;
-    if (playTimer) { stopPlay(); return; }
-    const pts = route.coords.map(([x, y]) => L.latLng(y, x));
-    // cumulative distance so the dot moves at a steady pace
-    const cum = [0];
-    for (let i = 1; i < pts.length; i++) cum.push(cum[i - 1] + pts[i - 1].distanceTo(pts[i]));
-    const total = cum.at(-1) || 1;
-    playTrail = L.polyline([pts[0]], { color: "#0b2e66", weight: 5, opacity: 0.85, interactive: false }).addTo(map);
-    playDot = L.circleMarker(pts[0], { radius: 7, color: "#fff", weight: 2, fillColor: ROUTE, fillOpacity: 1, interactive: false }).addTo(map);
-    $("play-route").textContent = "Stop";
-    let pos = 0, idx = 0, last = performance.now();
+    if (playTimer) { pausePlay(); return; }
+    playerData();
+    if (P.pos >= P.total - 1) P.pos = 0; // at the end: start over
+    renderAt(P.pos);
+    $("play-route").textContent = "Pause";
     playTimer = true;
+    let last = performance.now();
     const frame = now => {
       if (!playTimer) return;
       const speed = Number($("play-speed").value) || 1;      // 1x = whole route in 40 s
-      pos += (now - last) / 40000 * total * speed; last = now;
-      if (pos >= total) { stopPlay(); return; }
-      while (idx < pts.length - 2 && cum[idx + 1] < pos) { idx++; playTrail.addLatLng(pts[idx]); }
-      const f = (pos - cum[idx]) / ((cum[idx + 1] - cum[idx]) || 1);
-      const a = pts[idx], b = pts[idx + 1];
-      playDot.setLatLng([a.lat + (b.lat - a.lat) * f, a.lng + (b.lng - a.lng) * f]);
+      const next = P.pos + (now - last) / 40000 * P.total * speed; last = now;
+      if (next >= P.total) { renderAt(P.total); pausePlay(); return; }
+      renderAt(next);
       playRaf = requestAnimationFrame(frame);
     };
     playRaf = requestAnimationFrame(frame);
+  }
+  function seek() {
+    if (!route) return;
+    playerData();
+    renderAt(Number($("play-pos").value) / SLIDER_MAX * P.total); // keeps playing if it was
   }
   function gpx() {
     if (!route) return;
@@ -312,6 +355,7 @@
       $("clear-area").addEventListener("click", clearArea);
       $("build-route").addEventListener("click", build);
       $("play-route").addEventListener("click", play);
+      $("play-pos").addEventListener("input", seek);
       $("download-gpx").addEventListener("click", gpx);
       $("optimize-route").addEventListener("click", optimize);
       Store.get("penalty").then(v => { if (v && PENALTY[v] !== undefined) $("repeat-penalty").value = v; });

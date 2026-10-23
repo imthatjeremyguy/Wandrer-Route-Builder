@@ -136,7 +136,11 @@ select:focus-visible { outline: 3px solid var(--paint); outline-offset: 2px; }
 .area-handle { border-radius: 50%; border: 2px solid #12573a; background: #fff; box-shadow: 0 1px 3px rgba(0,0,0,0.35); cursor: grab; }
 .area-handle.mid { opacity: 0.8; background: #f2b705; }
 .area-handle:hover { background: #f2b705; }
-.btn-row #play-speed { align-self: center; }
+.player { display: flex; align-items: center; gap: 10px; }
+.player .btn { min-width: 72px; }
+#play-pos { flex: 1; min-width: 0; accent-color: var(--paint); height: 28px; cursor: pointer; }
+#play-pos:focus-visible { outline: 3px solid var(--paint); outline-offset: 2px; }
+.player-mi { margin: 4px 0 14px !important; font-size: 0.85rem; font-variant-numeric: tabular-nums; }
 /* while drawing or picking, clicks go to the map, not to road lines or popups */
 .leaflet-container.picking .leaflet-overlay-pane,
 .leaflet-container.picking .leaflet-marker-pane { pointer-events: none; }
