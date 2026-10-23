@@ -133,6 +133,10 @@ select:focus-visible { outline: 3px solid var(--paint); outline-offset: 2px; }
   border: 3px solid #fff; box-shadow: 0 1px 4px rgba(0,0,0,0.4);
 }
 .leaflet-container.picking { cursor: crosshair; }
+.area-handle { border-radius: 50%; border: 2px solid #12573a; background: #fff; box-shadow: 0 1px 3px rgba(0,0,0,0.35); cursor: grab; }
+.area-handle.mid { opacity: 0.8; background: #f2b705; }
+.area-handle:hover { background: #f2b705; }
+.btn-row #play-speed { align-self: center; }
 /* while drawing or picking, clicks go to the map, not to road lines or popups */
 .leaflet-container.picking .leaflet-overlay-pane,
 .leaflet-container.picking .leaflet-marker-pane { pointer-events: none; }

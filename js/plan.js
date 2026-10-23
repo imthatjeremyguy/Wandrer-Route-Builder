@@ -41,6 +41,40 @@
     else areaRect.setLatLngs(toLatLngs(ring));
     if (save) Store.set("area", area);
     clearRoute(); refresh();
+    drawHandles();
+  }
+
+  /* Corner handles: drag a corner to move it, drag a small midpoint handle to
+   * add a corner there, right-click or double-click a corner to delete it. */
+  let handles = null;
+  const handleIcon = (cls) => {
+    const z = cls === "mid" ? 11 : 16; // Leaflet positions markers with transform, so size via the icon
+    return L.divIcon({ className: "area-handle " + cls, iconSize: [z, z], iconAnchor: [z / 2, z / 2] });
+  };
+  function drawHandles() {
+    if (handles) { map.removeLayer(handles); handles = null; }
+    if (!area) return;
+    handles = L.layerGroup().addTo(map);
+    const live = () => area.map(([x, y]) => L.latLng(y, x));
+    area.forEach(([x, y], i) => {
+      const m = L.marker([y, x], { draggable: true, icon: handleIcon("corner"), keyboard: false,
+        title: "Drag to move. Right-click or double-click to delete." }).addTo(handles);
+      m.on("drag", e => { const ll = live(); ll[i] = e.target.getLatLng(); areaRect.setLatLngs(ll); });
+      m.on("dragend", e => { const p = e.target.getLatLng(); const r = area.slice(); r[i] = [p.lng, p.lat]; setArea(r); });
+      const del = e => {
+        L.DomEvent.stop(e);
+        if (area.length <= 3) { say("A shape needs at least 3 corners.", true); return; }
+        setArea(area.filter((_, j) => j !== i)); say("");
+      };
+      m.on("contextmenu", del); m.on("dblclick", del);
+    });
+    area.forEach(([x1, y1], i) => {
+      const [x2, y2] = area[(i + 1) % area.length];
+      const m = L.marker([(y1 + y2) / 2, (x1 + x2) / 2], { draggable: true, icon: handleIcon("mid"), keyboard: false,
+        title: "Drag to add a corner" }).addTo(handles);
+      m.on("drag", e => { const ll = live(); ll.splice(i + 1, 0, e.target.getLatLng()); areaRect.setLatLngs(ll); });
+      m.on("dragend", e => { const p = e.target.getLatLng(); const r = area.slice(); r.splice(i + 1, 0, [p.lng, p.lat]); setArea(r); });
+    });
   }
 
   function pointInRing([x, y], ring) {
@@ -55,7 +89,7 @@
   function clearArea() {
     cancelMode();
     if (areaRect) { map.removeLayer(areaRect); areaRect = null; }
-    area = null;
+    area = null; drawHandles();
     Store.del("area");
     clearRoute(); refresh(); say("");
   }
@@ -65,6 +99,7 @@
   function drawShape() {
     cancelMode();
     mode = "shape";
+    if (handles) { map.removeLayer(handles); handles = null; }
     const el = map.getContainer();
     el.classList.add("picking");
     map.doubleClickZoom.disable();
@@ -109,6 +144,7 @@
     };
     const onRight = e => { L.DomEvent.preventDefault(e.originalEvent); undo(); };
     function cleanup() {
+      if (!handles) setTimeout(drawHandles, 0); // bring corner handles back if the shape wasn't replaced
       map.off("click", onClick); map.off("dblclick", onDbl); map.off("mousemove", onMove); map.off("contextmenu", onRight);
       document.removeEventListener("keydown", onKey);
       $("shape-tools").hidden = true;
@@ -227,24 +263,39 @@
   }
 
   // ---------- play + GPX ----------
+  let playTrail = null, playRaf = null;
   function stopPlay() {
-    if (playTimer) { clearInterval(playTimer); playTimer = null; }
+    if (playRaf) { cancelAnimationFrame(playRaf); playRaf = null; }
+    playTimer = null;
     if (playDot) { map.removeLayer(playDot); playDot = null; }
+    if (playTrail) { map.removeLayer(playTrail); playTrail = null; }
     $("play-route").textContent = "Play route";
   }
   function play() {
     if (!route) return;
     if (playTimer) { stopPlay(); return; }
-    const pts = route.coords.map(([x, y]) => [y, x]);
-    let i = 0;
-    playDot = L.circleMarker(pts[0], { radius: 7, color: "#fff", weight: 2, fillColor: ROUTE, fillOpacity: 1 }).addTo(map);
-    const step = Math.max(1, Math.round(pts.length / 900)); // ~20 s for any route length
+    const pts = route.coords.map(([x, y]) => L.latLng(y, x));
+    // cumulative distance so the dot moves at a steady pace
+    const cum = [0];
+    for (let i = 1; i < pts.length; i++) cum.push(cum[i - 1] + pts[i - 1].distanceTo(pts[i]));
+    const total = cum.at(-1) || 1;
+    playTrail = L.polyline([pts[0]], { color: "#0b2e66", weight: 5, opacity: 0.85, interactive: false }).addTo(map);
+    playDot = L.circleMarker(pts[0], { radius: 7, color: "#fff", weight: 2, fillColor: ROUTE, fillOpacity: 1, interactive: false }).addTo(map);
     $("play-route").textContent = "Stop";
-    playTimer = setInterval(() => {
-      i += step;
-      if (i >= pts.length) { stopPlay(); return; }
-      playDot.setLatLng(pts[i]);
-    }, 22);
+    let pos = 0, idx = 0, last = performance.now();
+    playTimer = true;
+    const frame = now => {
+      if (!playTimer) return;
+      const speed = Number($("play-speed").value) || 1;      // 1x = whole route in 20 s
+      pos += (now - last) / 20000 * total * speed; last = now;
+      if (pos >= total) { stopPlay(); return; }
+      while (idx < pts.length - 2 && cum[idx + 1] < pos) { idx++; playTrail.addLatLng(pts[idx]); }
+      const f = (pos - cum[idx]) / ((cum[idx + 1] - cum[idx]) || 1);
+      const a = pts[idx], b = pts[idx + 1];
+      playDot.setLatLng([a.lat + (b.lat - a.lat) * f, a.lng + (b.lng - a.lng) * f]);
+      playRaf = requestAnimationFrame(frame);
+    };
+    playRaf = requestAnimationFrame(frame);
   }
   function gpx() {
     if (!route) return;
