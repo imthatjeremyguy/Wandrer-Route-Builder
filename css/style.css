@@ -108,6 +108,21 @@ body {
 .check input { width: 18px; height: 18px; accent-color: var(--paint); }
 .check input:focus-visible { outline: 3px solid var(--paint); outline-offset: 2px; }
 
+.plan-row { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-bottom: 12px; }
+.plan-k { display: block; font-size: 0.8rem; color: var(--sign-ink-soft); }
+.plan-v { display: block; font-weight: 600; font-variant-numeric: tabular-nums; }
+.btn-small { padding: 6px 12px 4px; font-size: 0.9rem; white-space: nowrap; }
+#build-route { margin: 4px 0 16px; width: 100%; }
+.btn-row { display: flex; gap: 10px; flex-wrap: wrap; }
+#route-result { margin-top: 4px; }
+
+.start-pin span {
+  display: grid; place-items: center; width: 28px; height: 28px; border-radius: 50%;
+  background: var(--sign); color: #fff; font-weight: 800; font-size: 14px;
+  border: 3px solid #fff; box-shadow: 0 1px 4px rgba(0,0,0,0.4);
+}
+.leaflet-container.picking { cursor: crosshair; }
+
 .msg { white-space: pre-line; min-height: 1.2em; margin: 12px 0 0 !important; font-size: 0.9rem; }
 .msg.error { color: #ffd2cc; }
 

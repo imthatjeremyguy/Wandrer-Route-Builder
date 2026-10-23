@@ -72,7 +72,7 @@
     say("msg", "Reading " + file.name + "...");
     try {
       const data = await WandrerKmz.load(file);
-      wandrer = data; network = null;
+      wandrer = data; network = null; Plan.reset();
       drawUntraveled(data);
       showStats(data);
       say("msg", "Loaded " + file.name + ".");
@@ -118,6 +118,7 @@
         network.downloadMs = osm.downloadMs ?? null;
         drawNetwork(network);
         showNetStats(network);
+        Plan.setNetwork(network);
         say("roads-msg", "");
         resolve(network);
       };
@@ -165,6 +166,8 @@
     e.preventDefault(); dragDepth = 0; $("drop-hint").hidden = true;
     handleFile(e.dataTransfer.files[0]);
   });
+
+  Plan.init(map);
 
   // ---------- restore from this browser ----------
   Store.get("wandrer").then(async data => {
