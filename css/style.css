@@ -108,7 +108,7 @@ body {
 .check input { width: 18px; height: 18px; accent-color: var(--paint); }
 .check input:focus-visible { outline: 3px solid var(--paint); outline-offset: 2px; }
 
-.msg { min-height: 1.2em; margin: 12px 0 0 !important; font-size: 0.9rem; }
+.msg { white-space: pre-line; min-height: 1.2em; margin: 12px 0 0 !important; font-size: 0.9rem; }
 .msg.error { color: #ffd2cc; }
 
 .panel-foot { margin-top: auto; padding: 16px 20px; font-size: 0.85rem; color: var(--sign-ink-soft); }

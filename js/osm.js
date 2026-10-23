@@ -37,26 +37,49 @@ out body geom qt;`;
 
   const sleep = ms => new Promise(r => setTimeout(r, ms));
 
-  async function fetchTile(tile) {
+  const TIMEOUT_MS = 75000;  // give up on a server after this and try the next one
+  const host = url => new URL(url).host;
+
+  /** Fetch one tile, trying each server in turn. status(text) reports live progress. */
+  async function fetchTile(tile, status) {
     const body = "data=" + encodeURIComponent(query(tile.box));
-    let lastErr;
+    const log = [];
+    let lastErr, attempt = 0;
     for (let pass = 0; pass < TRIES; pass++) {
       for (const url of SERVERS) {
+        attempt++;
+        const ctrl = new AbortController();
+        const started = performance.now();
+        const timer = setTimeout(() => ctrl.abort(), TIMEOUT_MS);
+        const tick = setInterval(() =>
+          status(`${host(url)}, try ${attempt}, ${Math.round((performance.now() - started) / 1000)} s`), 1000);
+        status(`${host(url)}, try ${attempt}, 0 s`);
         try {
-          const res = await fetch(url, { method: "POST", body,
+          const res = await fetch(url, { method: "POST", body, signal: ctrl.signal,
             headers: { "Content-Type": "application/x-www-form-urlencoded" } });
-          if (res.status === 429) { await sleep(5000); throw new Error("busy (429)"); }
+          if (res.status === 429) throw new Error("busy (429)");
           if (!res.ok) throw new Error(`answered ${res.status}`);
-          const json = await res.json();
+          const text = await res.text();
+          const json = JSON.parse(text);
           if (json.remark && /error|timed out|runtime/i.test(json.remark)) throw new Error(json.remark);
+          const secs = (performance.now() - started) / 1000;
+          log.push({ server: host(url), result: "ok", seconds: +secs.toFixed(1), MB: +(text.length / 1e6).toFixed(2) });
+          console.table(log.map(r => ({ tile: tile.key, ...r })));
           return { elements: json.elements || [], fetchedAt: new Date().toISOString() };
         } catch (err) {
-          lastErr = new Error(`${new URL(url).host} ${err.message}`);
+          const secs = (performance.now() - started) / 1000;
+          const why = err.name === "AbortError" ? `no answer in ${TIMEOUT_MS / 1000} s` : err.message;
+          log.push({ server: host(url), result: why, seconds: +secs.toFixed(1) });
+          lastErr = new Error(`${host(url)}: ${why}`);
           console.warn("Overpass tile failed:", tile.key, lastErr.message);
+        } finally {
+          clearTimeout(timer); clearInterval(tick);
         }
       }
+      status(`all servers failed, waiting before round ${pass + 2}`);
       await sleep(3000 * (pass + 1));
     }
+    console.table(log.map(r => ({ tile: tile.key, ...r })));
     throw lastErr;
   }
 
@@ -96,31 +119,40 @@ out body geom qt;`;
       if (d) data[i] = d; else todo.push(i);
     }
     let done = tiles.length - todo.length, failed = 0;
-    const report = () => onProgress?.(`Downloading roads: ${done} of ${tiles.length} tiles` + (failed ? `, ${failed} failed` : ""));
+    const active = new Map(); // tile index -> live status text
+    const report = () => {
+      const head = `Downloading roads: ${done} of ${tiles.length} tiles done` + (failed ? `, ${failed} failed` : "");
+      const lines = [...active].map(([i, txt]) => `Tile ${i + 1}: ${txt}`);
+      onProgress?.([head, ...lines].join("\n"));
+    };
     report();
+    const t0 = performance.now();
 
     let next = 0;
     async function lane() {
       while (next < todo.length) {
         const i = todo[next++];
+        active.set(i, "starting");
         try {
-          data[i] = await fetchTile(tiles[i]);
+          data[i] = await fetchTile(tiles[i], txt => { active.set(i, txt); report(); });
           await Store.set(tiles[i].key, data[i]);
           done++;
         } catch (err) {
           failed++;
           console.error("Tile gave up:", tiles[i].key, err);
         }
+        active.delete(i);
         report();
       }
     }
     await Promise.all(Array.from({ length: Math.min(PARALLEL, todo.length) }, lane));
+    const downloadMs = todo.length ? performance.now() - t0 : null;
 
     if (failed) {
       throw new Error(`${failed} of ${tiles.length} road tiles couldn't be downloaded; the OpenStreetMap servers are busy. ` +
         (done ? `The other ${done} are saved, so ` : "") + `${done ? "click" : "Click"} Get roads again in a minute to fetch the missing ones.`);
     }
-    return merge(data, tiles);
+    return { ...merge(data, tiles), downloadMs };
   }
 
   window.Osm = { fetchRoads, cached, tilesFor };

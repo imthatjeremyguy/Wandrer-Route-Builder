@@ -115,6 +115,7 @@
         worker.terminate();
         network = e.data.result;
         network.osmDate = osm.fetchedAt;
+        network.downloadMs = osm.downloadMs ?? null;
         drawNetwork(network);
         showNetStats(network);
         say("roads-msg", "");
@@ -137,8 +138,11 @@
     $("net-new").textContent = `${(s.newM * M2MI).toFixed(2)} mi (${pct}%)`;
     $("net-ride").textContent = `${Math.round(s.rideableM * M2MI).toLocaleString()} mi`;
     $("net-date").textContent = fmtDate(net.osmDate);
-    $("net-time").textContent = `${(s.ms / 1000).toFixed(1)} s`;
+    const dl = net.downloadMs == null ? "cached" : fmtSecs(net.downloadMs);
+    $("net-time").textContent = `${dl} / ${fmtSecs(s.ms)}`;
   }
+
+  const fmtSecs = ms => ms >= 60000 ? `${Math.floor(ms / 60000)} m ${Math.round(ms % 60000 / 1000)} s` : `${(ms / 1000).toFixed(1)} s`;
 
   function setBusy(b) { $("get-roads").disabled = b; $("refresh-roads").disabled = b; }
 
