@@ -31,30 +31,41 @@
     map.once("click", e => { cancelMode(); setStart(e.latlng); say(""); });
   }
 
-  // ---------- area box ----------
-  function setArea(bounds, save = true) {
-    area = [bounds.getWest(), bounds.getSouth(), bounds.getEast(), bounds.getNorth()];
-    if (!areaRect) areaRect = L.rectangle(bounds, { color: "#12573a", weight: 2, fillOpacity: 0.06, dashArray: "6 4", interactive: false }).addTo(map);
-    else areaRect.setBounds(bounds);
-    $("draw-area").textContent = "Redraw area";
+  // ---------- area: a polygon ring [[lon,lat], ...] (a box is just 4 corners) ----------
+  const AREA_STYLE = { color: "#12573a", weight: 2, fillOpacity: 0.06, dashArray: "6 4", interactive: false };
+  const toLatLngs = ring => ring.map(([x, y]) => [y, x]);
+
+  function setArea(ring, save = true) {
+    area = ring;
+    if (!areaRect) areaRect = L.polygon(toLatLngs(ring), AREA_STYLE).addTo(map);
+    else areaRect.setLatLngs(toLatLngs(ring));
     if (save) Store.set("area", area);
     clearRoute(); refresh();
   }
 
-  function drawArea() {
+  function pointInRing([x, y], ring) {
+    let inside = false;
+    for (let i = 0, j = ring.length - 1; i < ring.length; j = i++) {
+      const [xi, yi] = ring[i], [xj, yj] = ring[j];
+      if ((yi > y) !== (yj > y) && x < ((xj - xi) * (y - yi)) / (yj - yi) + xi) inside = !inside;
+    }
+    return inside;
+  }
+
+  function drawBox() {
     cancelMode();
-    mode = "area";
+    mode = "box";
     const el = map.getContainer();
     el.classList.add("picking");
     map.dragging.disable();
-    say("Drag a box over the roads you want to collect.");
+    say("Drag a box over the roads you want to collect. Esc cancels.");
     let a = null, tmp = null;
     const ll = e => map.mouseEventToLatLng(e);
     const down = e => { if (e.button > 0) return; a = ll(e); el.setPointerCapture?.(e.pointerId); e.preventDefault(); };
     const move = e => {
       if (!a) return;
       const b = L.latLngBounds(a, ll(e));
-      if (!tmp) tmp = L.rectangle(b, { color: "#12573a", weight: 2, fillOpacity: 0.08, interactive: false }).addTo(map);
+      if (!tmp) tmp = L.rectangle(b, { ...AREA_STYLE, dashArray: null, fillOpacity: 0.1 }).addTo(map);
       else tmp.setBounds(b);
     };
     const up = e => {
@@ -62,9 +73,10 @@
       const b = L.latLngBounds(a, ll(e));
       cleanup();
       if (map.latLngToContainerPoint(b.getNorthWest()).distanceTo(map.latLngToContainerPoint(b.getSouthEast())) < 12) {
-        say("That box was too small. Press Draw area and drag across the roads.", true); return;
+        say("That box was too small. Press Draw box and drag across the roads.", true); return;
       }
-      setArea(b); say("");
+      const [w, s, e2, n] = [b.getWest(), b.getSouth(), b.getEast(), b.getNorth()];
+      setArea([[w, s], [e2, s], [e2, n], [w, n]]); say("");
     };
     function cleanup() {
       el.removeEventListener("pointerdown", down); el.removeEventListener("pointermove", move); el.removeEventListener("pointerup", up);
@@ -73,6 +85,60 @@
     }
     el.addEventListener("pointerdown", down); el.addEventListener("pointermove", move); el.addEventListener("pointerup", up);
     cancelMode.fn = cleanup;
+  }
+
+  /* Shape: click (or tap) corners; click the first corner, double-click, or press
+   * Enter to finish. Backspace removes the last corner, Esc cancels. */
+  function drawShape() {
+    cancelMode();
+    mode = "shape";
+    const el = map.getContainer();
+    el.classList.add("picking");
+    map.doubleClickZoom.disable();
+    const pts = [];
+    const line = L.polyline([], { color: "#12573a", weight: 2, interactive: false }).addTo(map);
+    const rubber = L.polyline([], { color: "#12573a", weight: 2, dashArray: "4 4", interactive: false }).addTo(map);
+    const dots = L.layerGroup().addTo(map);
+    const hint = () => say(pts.length < 3
+      ? `Click around the area to add corners (${pts.length} so far). Esc cancels.`
+      : "Click the first corner, double-click, or press Enter to finish. Backspace undoes a corner.");
+    const redraw = () => {
+      line.setLatLngs(pts);
+      dots.clearLayers();
+      pts.forEach((p, i) => L.circleMarker(p, { radius: i === 0 ? 7 : 4, color: "#12573a", weight: 2,
+        fillColor: i === 0 ? "#f2b705" : "#fff", fillOpacity: 1, interactive: false }).addTo(dots));
+      hint();
+    };
+    const nearFirst = latlng => pts.length >= 3 &&
+      map.latLngToContainerPoint(latlng).distanceTo(map.latLngToContainerPoint(pts[0])) < 14;
+    const finish = () => {
+      if (pts.length < 3) { say("A shape needs at least 3 corners.", true); return; }
+      const ring = pts.map(p => [p.lng, p.lat]);
+      cleanup(); setArea(ring); say("");
+    };
+    const nearLast = latlng => pts.length &&
+      map.latLngToContainerPoint(latlng).distanceTo(map.latLngToContainerPoint(pts.at(-1))) < 6;
+    const onClick = e => {
+      if (nearFirst(e.latlng)) { finish(); return; }
+      if (nearLast(e.latlng)) return; // second click of a double-click
+      pts.push(e.latlng); redraw();
+    };
+    const onDbl = e => { L.DomEvent.stop(e); finish(); };
+    const onMove = e => { rubber.setLatLngs(pts.length ? [pts.at(-1), e.latlng] : []); };
+    const onKey = e => {
+      if (e.key === "Enter") { e.preventDefault(); finish(); }
+      else if (e.key === "Backspace" && pts.length) { e.preventDefault(); pts.pop(); redraw(); }
+    };
+    function cleanup() {
+      map.off("click", onClick); map.off("dblclick", onDbl); map.off("mousemove", onMove);
+      document.removeEventListener("keydown", onKey);
+      [line, rubber, dots].forEach(l => map.removeLayer(l));
+      map.doubleClickZoom.enable(); el.classList.remove("picking"); mode = null; cancelMode.fn = null;
+    }
+    map.on("click", onClick); map.on("dblclick", onDbl); map.on("mousemove", onMove);
+    document.addEventListener("keydown", onKey);
+    cancelMode.fn = cleanup;
+    hint();
   }
 
   function cancelMode() {
@@ -84,11 +150,10 @@
 
   function areaNewMiles() {
     if (!network || !area) return 0;
-    const [w, s, e, n] = area; let m = 0;
+    let m = 0;
     for (const ed of network.edges) {
       if (ed.newM < 5) continue;
-      const [x, y] = ed.coords[ed.coords.length >> 1];
-      if (x >= w && x <= e && y >= s && y <= n) m += ed.newM;
+      if (pointInRing(ed.coords[ed.coords.length >> 1], area)) m += ed.newM;
     }
     return m;
   }
@@ -110,7 +175,7 @@
       if (e.data.error) { say(e.data.error, true); return; }
       showRoute(e.data.result);
     };
-    worker.postMessage({ type: "solve", start, box: area });
+    worker.postMessage({ type: "solve", start, ring: area });
   }
 
   function showRoute(r) {
@@ -167,13 +232,19 @@
     init(m) {
       map = m;
       $("set-start").addEventListener("click", pickStart);
-      $("draw-area").addEventListener("click", drawArea);
+      $("draw-box").addEventListener("click", drawBox);
+      $("draw-shape").addEventListener("click", drawShape);
       $("build-route").addEventListener("click", build);
       $("play-route").addEventListener("click", play);
       $("download-gpx").addEventListener("click", gpx);
       document.addEventListener("keydown", e => { if (e.key === "Escape" && mode) { cancelMode(); say(""); } });
       Store.get("start").then(s => { if (s) setStart(L.latLng(s[1], s[0]), false); });
-      Store.get("area").then(a => { if (a) setArea(L.latLngBounds([a[1], a[0]], [a[3], a[2]]), false); });
+      Store.get("area").then(a => {
+        if (!a) return;
+        // older versions saved a box as [w, s, e, n]
+        if (typeof a[0] === "number") { const [w, s, e, n] = a; a = [[w, s], [e, s], [e, n], [w, n]]; }
+        setArea(a, false);
+      });
     },
     setNetwork(net) {
       network = net;

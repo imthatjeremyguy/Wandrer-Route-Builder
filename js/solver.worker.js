@@ -4,7 +4,7 @@
  *
  * Messages in:
  *   {type:"network", nodes, edges}            once, after the network is built
- *   {type:"solve", start:[lon,lat], box:[w,s,e,n]}
+ *   {type:"solve", start:[lon,lat], ring:[[lon,lat], ...]}   area polygon
  * Messages out:
  *   {progress: "..."}
  *   {result: {coords, totalM, newM, newAvailM, wrongWay, ms, startLonLat, dropped}}
@@ -28,7 +28,7 @@ self.onmessage = (e) => {
   const m = e.data;
   if (m.type === "network") { NET = { nodes: m.nodes, edges: m.edges }; return; }
   if (m.type === "solve") {
-    try { self.postMessage({ result: solve(m.start, m.box) }); }
+    try { self.postMessage({ result: solve(m.start, m.ring) }); }
     catch (err) { console.error(err); self.postMessage({ error: err.message || String(err) }); }
   }
 };
@@ -60,11 +60,21 @@ class Heap {
   topKey() { return this.k[0]; }
 }
 
-function solve(startLonLat, box) {
+function pointInRing([x, y], ring) {
+  let inside = false;
+  for (let i = 0, j = ring.length - 1; i < ring.length; j = i++) {
+    const [xi, yi] = ring[i], [xj, yj] = ring[j];
+    if ((yi > y) !== (yj > y) && x < ((xj - xi) * (y - yi)) / (yj - yi) + xi) inside = !inside;
+  }
+  return inside;
+}
+
+function solve(startLonLat, ring) {
   const t0 = performance.now();
   if (!NET) throw new Error("The road network isn't loaded yet.");
-  const [bw, bs, be, bn] = box;
-  const inBox = ([x, y]) => x >= bw && x <= be && y >= bs && y <= bn;
+  const bw = Math.min(...ring.map(p => p[0])), be = Math.max(...ring.map(p => p[0]));
+  const bs = Math.min(...ring.map(p => p[1])), bn = Math.max(...ring.map(p => p[1]));
+  const inBox = p => pointInRing(p, ring);
 
   // ---------- 1. subgraph ----------
   say("Preparing roads...");
@@ -138,7 +148,7 @@ function solve(startLonLat, box) {
   }
 
   const reqIdx = edges.map((ed, i) => (ed.req ? i : -1)).filter(i => i >= 0);
-  if (!reqIdx.length) throw new Error("No new roads inside that area. Draw a box around some red roads.");
+  if (!reqIdx.length) throw new Error("No new roads inside that area. Draw an area around some red roads.");
   const newAvail = reqIdx.reduce((s, i) => s + edges[i].newM, 0);
 
   // drop new roads the start can't reach and return from (one-way traps at the edge of the subgraph)
@@ -347,7 +357,7 @@ function solve(startLonLat, box) {
     const seg = a === ed.u ? ed.coords : ed.coords.slice().reverse();
     for (let i = coords.length ? 1 : 0; i < seg.length; i++) coords.push(seg[i]);
     totalM += ed.len;
-    if (!seen.has(e)) { seen.add(e); if (ed.req) newM += ed.newM; }
+    if (!seen.has(e)) { seen.add(e); newM += ed.newM; } // includes bonus new road ridden outside the area
   }
   return { coords, totalM, newM, newAvailM: newAvail, wrongWay, dropped,
            startLonLat: lonlat[start], ms: Math.round(performance.now() - t0) };
