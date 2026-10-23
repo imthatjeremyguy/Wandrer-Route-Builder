@@ -1,0 +1,93 @@
+# Builds Indiana road tiles from Geofabrik's OpenStreetMap extract and
+# publishes them with the site to GitHub Pages.
+#
+# - Monthly (3rd of the month): fresh OSM download, tiles rebuilt.
+# - Every push to main: site redeployed, reusing this month's tiles from cache.
+# - Manual run (Actions tab > Run workflow): tick "rebuild" to force fresh tiles.
+name: Build roads and deploy site
+
+on:
+  push:
+    branches: [main]
+  schedule:
+    - cron: "17 6 3 * *"
+  workflow_dispatch:
+    inputs:
+      rebuild:
+        description: "Download OSM again and rebuild road tiles"
+        type: boolean
+        default: false
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+concurrency:
+  group: pages
+  cancel-in-progress: false
+
+env:
+  OSM_URL: https://download.geofabrik.de/north-america/us/indiana-latest.osm.pbf
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Month key for the tile cache
+        id: month
+        run: echo "ym=$(date -u +%Y-%m)" >> "$GITHUB_OUTPUT"
+
+      - name: Restore this month's road tiles
+        id: cache
+        if: ${{ !inputs.rebuild }}
+        uses: actions/cache/restore@v4
+        with:
+          path: data/roads
+          key: roads-indiana-${{ steps.month.outputs.ym }}-${{ hashFiles('tools/build_roads.py') }}
+
+      - name: Set up Python
+        if: steps.cache.outputs.cache-hit != 'true'
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Build road tiles from OpenStreetMap
+        if: steps.cache.outputs.cache-hit != 'true'
+        run: |
+          pip install osmium
+          curl -fsSL --retry 3 -o indiana.osm.pbf "$OSM_URL"
+          ls -lh indiana.osm.pbf
+          python tools/build_roads.py indiana.osm.pbf data/roads
+          du -sh data/roads
+
+      - name: Save road tiles for later pushes this month
+        if: steps.cache.outputs.cache-hit != 'true'
+        uses: actions/cache/save@v4
+        with:
+          path: data/roads
+          key: roads-indiana-${{ steps.month.outputs.ym }}-${{ hashFiles('tools/build_roads.py') }}
+
+      - name: Assemble site
+        run: |
+          mkdir -p _site/data
+          cp -r index.html css js _site/
+          cp -r data/roads _site/data/
+          touch _site/.nojekyll
+          du -sh _site
+
+      - uses: actions/upload-pages-artifact@v3
+        with:
+          path: _site
+
+  deploy:
+    needs: build
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - id: deployment
+        uses: actions/deploy-pages@v4
