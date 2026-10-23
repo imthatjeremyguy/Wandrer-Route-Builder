@@ -75,9 +75,16 @@ self.onmessage = (e) => {
       const k = cellKey(cx, cy); let arr = grid.get(k); if (!arr) grid.set(k, arr = []); arr.push(i);
     }
   });
+  /** Distance from a point to a piece, counting only points alongside it: a point
+   *  beyond either end (more than END_SLACK past it) never matches, so the next block or a
+   *  cross street can't borrow metres from where a new line stops. */
+  const END_SLACK = 3; // m
   function distToSeg(px, py, g) {
     const dx = g[2] - g[0], dy = g[3] - g[1], L2 = dx * dx + dy * dy;
-    let t = L2 ? ((px - g[0]) * dx + (py - g[1]) * dy) / L2 : 0; t = Math.max(0, Math.min(1, t));
+    if (!L2) return Infinity;
+    const L = Math.sqrt(L2), along = ((px - g[0]) * dx + (py - g[1]) * dy) / L;
+    if (along < -END_SLACK || along > L + END_SLACK) return Infinity;
+    const t = Math.max(0, Math.min(1, along / L));
     return Math.hypot(px - (g[0] + t * dx), py - (g[1] + t * dy));
   }
   function newFraction(a, b) {
@@ -92,7 +99,8 @@ self.onmessage = (e) => {
       for (const j of cand) {
         const g = segs[j];
         let d = Math.abs(g[4] - th); d = Math.min(d, Math.PI - d);
-        if ((d < MATCH_ANGLE || g[5] < 3) && distToSeg(px, py, g) <= MATCH_DIST) { hits++; break; }
+        // direction must match too: a cross street must not borrow a few metres from the street it meets
+        if (d < MATCH_ANGLE && distToSeg(px, py, g) <= MATCH_DIST) { hits++; break; }
       }
     }
     return hits / n;

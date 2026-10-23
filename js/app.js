@@ -34,7 +34,7 @@
   function drawNetwork(net) {
     clear("untraveled"); clear("connectors"); clear("newRoads");
     const conn = [], fresh = [];
-    for (const e of net.edges) (e.newM / e.len > 0.05 ? fresh : conn).push(e);
+    for (const e of net.edges) (e.newM >= 15 ? fresh : conn).push(e); // same minimum as the solver
     layers.connectors = L.layerGroup(conn.map(e =>
       L.polyline(ll(e.coords), { color: "#5b6670", weight: 1.5, opacity: 0.55, interactive: false })));
     if ($("show-connectors").checked) layers.connectors.addTo(map);

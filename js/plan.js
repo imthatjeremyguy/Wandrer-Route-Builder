@@ -172,7 +172,7 @@
     if (!network || !area) return 0;
     let m = 0;
     for (const ed of network.edges) {
-      if (ed.newM < 5) continue;
+      if (ed.newM < 15) continue; // same minimum as the solver
       if (pointInRing(ed.coords[ed.coords.length >> 1], area)) m += ed.newM;
     }
     return m;

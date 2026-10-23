@@ -15,7 +15,7 @@
  * distance). It steers return trips around the block instead of back down
  * the street just ridden.
  */
-const MIN_NEW_M = 5;       // ignore new-road slivers shorter than this
+const MIN_NEW_M = 15;      // a block needs at least this much new road to be worth riding
 const MARGIN_DEG = 0.02;   // ~2 km of extra roads around the area for detours
 const K_NEAR = 16;         // nearest candidates kept per junction
 const NEAR_CAP_M = 10000;  // stop a nearest-candidate search past this distance
