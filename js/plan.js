@@ -286,8 +286,8 @@
     playTimer = true;
     const frame = now => {
       if (!playTimer) return;
-      const speed = Number($("play-speed").value) || 1;      // 1x = whole route in 20 s
-      pos += (now - last) / 20000 * total * speed; last = now;
+      const speed = Number($("play-speed").value) || 1;      // 1x = whole route in 40 s
+      pos += (now - last) / 40000 * total * speed; last = now;
       if (pos >= total) { stopPlay(); return; }
       while (idx < pts.length - 2 && cum[idx + 1] < pos) { idx++; playTrail.addLatLng(pts[idx]); }
       const f = (pos - cum[idx]) / ((cum[idx + 1] - cum[idx]) || 1);
