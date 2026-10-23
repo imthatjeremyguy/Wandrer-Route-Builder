@@ -1,0 +1,189 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Help: Wandrer Route Builder</title>
+  <meta name="description" content="How to use Wandrer Route Builder.">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Overpass:wght@400;600;800&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="css/help.css?v=16">
+</head>
+<body>
+  <header class="help-top">
+    <div class="sign">
+      <p class="sign-title">Wandrer Route Builder</p>
+      <p class="sign-sub">Help</p>
+    </div>
+    <a class="back" href="./">Back to the map</a>
+  </header>
+
+  <div class="help-wrap">
+    <nav class="toc" aria-label="On this page">
+      <ol>
+        <li><a href="#quick-start">Quick start</a></li>
+        <li><a href="#colors">What the map shows</a></li>
+        <li><a href="#area">Drawing and editing the area</a></li>
+        <li><a href="#repeats">Avoid riding a road twice</a></li>
+        <li><a href="#stats">Route stats</a></li>
+        <li><a href="#optimize">Optimize</a></li>
+        <li><a href="#player">Playing the route</a></li>
+        <li><a href="#data">Where the roads come from</a></li>
+        <li><a href="#privacy">Your data</a></li>
+        <li><a href="#limits">Known limits</a></li>
+      </ol>
+    </nav>
+
+    <main class="help">
+      <section id="quick-start">
+        <h1>Quick start</h1>
+        <p>From a Wandrer export to a GPX on your bike computer in a few minutes.</p>
+        <ol class="steps">
+          <li><strong>Export your Wandrer map.</strong> On the Wandrer Big Map, zoom to the area you want, click <em>Download</em>, choose <em>KML/KMZ</em> and <em>Bike</em>. Wandrer emails you the file.</li>
+          <li><strong>Upload the KMZ.</strong> Click <em>Upload KMZ</em> or drag the file onto the page. Your untraveled roads appear in red, and the road network loads on its own.</li>
+          <li><strong>Set your start.</strong> Click <em>Set start</em>, then click the map. Drag the S marker to fine tune it.</li>
+          <li><strong>Draw an area.</strong> Click <em>Draw</em> and click corners around the roads you want to collect. See <a href="#area">drawing and editing</a>.</li>
+          <li><strong>Pick a repeat setting.</strong> <em>Some</em> is a good default. See <a href="#repeats">what the settings mean</a>.</li>
+          <li><strong>Build the route.</strong> The loop leaves your start, rides every new road in the area, and comes back.</li>
+          <li><strong>Optimize (optional).</strong> Lets the solver spend 10 to 60 seconds looking for a better loop.</li>
+          <li><strong>Download GPX</strong> and import it into Strava, RideWithGPS or Garmin Connect.</li>
+        </ol>
+        <p class="note">Your start, area and settings are remembered in this browser, so next time you can upload a fresh KMZ and press <em>Build route</em>.</p>
+      </section>
+
+      <section id="colors">
+        <h2>What the map shows</h2>
+        <ul class="legend">
+          <li><span class="swatch red"></span><span><strong>Red:</strong> new road. Nearly the whole stretch is on your Wandrer untraveled list.</span></li>
+          <li><span class="swatch orange"></span><span><strong>Orange:</strong> partly new. Only part of the stretch between two intersections is untraveled, at least 15 m of it. The route still rides it.</span></li>
+          <li><span class="swatch gray"></span><span><strong>Gray:</strong> connector roads the route can use to get between new roads. Turn these off with <em>Show connector roads</em>.</span></li>
+          <li><span class="swatch blue"></span><span><strong>Blue:</strong> your route.</span></li>
+          <li><span class="swatch navy"></span><span><strong>Dark blue:</strong> the part already covered while the route plays.</span></li>
+          <li><span class="swatch dash"></span><span><strong>Dashed green outline:</strong> your area. White dots are its corners; small yellow dots sit between them.</span></li>
+        </ul>
+        <p>Click any red or orange road to see its name and how much of it is new.</p>
+      </section>
+
+      <section id="area">
+        <h2>Drawing and editing the area</h2>
+        <p>Only new roads inside the area are collected. The route can still use roads outside it to get there and back.</p>
+        <h3>Drawing</h3>
+        <ul>
+          <li>Click <em>Draw</em>, then click each corner around the roads you want.</li>
+          <li><strong>Finish</strong> by clicking the first corner (yellow), double-clicking, pressing <kbd>Enter</kbd>, or clicking <em>Finish shape</em>.</li>
+          <li><strong>Undo a corner</strong> with <kbd>Ctrl</kbd>+<kbd>Z</kbd>, a right-click, <kbd>Backspace</kbd>, or <em>Undo corner</em>.</li>
+          <li><kbd>Esc</kbd> cancels drawing.</li>
+        </ul>
+        <h3>Editing a finished area</h3>
+        <ul>
+          <li><strong>Move a corner:</strong> drag a white dot.</li>
+          <li><strong>Add a corner:</strong> drag one of the small yellow dots between corners. Handy for carving out a section you want to skip.</li>
+          <li><strong>Delete a corner:</strong> right-click or double-click it. An area keeps at least 3 corners.</li>
+          <li><em>Clear</em> removes the area completely.</li>
+        </ul>
+        <p class="note">Any change to the area clears the current route. Press <em>Build route</em> again to get the updated one.</p>
+      </section>
+
+      <section id="repeats">
+        <h2>Avoid riding a road twice</h2>
+        <p>Every new road in the area gets ridden once. The extra miles come from getting between them: leaving a dead end, working around one-way streets, and linking separate clusters of new road. Sometimes the shortest way to do that is to ride back down a street you just covered. This setting decides how hard the route tries to avoid that.</p>
+
+        <div class="table-wrap">
+          <table>
+            <thead>
+              <tr><th scope="col">Setting</th><th scope="col">How the route plans</th><th scope="col">Best when</th></tr>
+            </thead>
+            <tbody>
+              <tr>
+                <th scope="row">Off</th>
+                <td>Shortest total distance, nothing else. Riding a street a second time costs the same as any other mile, so out-and-backs are common.</td>
+                <td>You want the fewest miles and don't mind U-turns.</td>
+              </tr>
+              <tr>
+                <th scope="row">Some</th>
+                <td>Each mile of new road ridden a second time counts as 1.5 miles while planning. A short detour around the block beats doubling back.</td>
+                <td>Most rides. Small trade of distance for flow.</td>
+              </tr>
+              <tr>
+                <th scope="row">Strong</th>
+                <td>Each mile ridden a second time counts as 2.5 miles. The route goes around the block even when that's noticeably longer.</td>
+                <td>Keeping momentum matters more than a few extra miles.</td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+
+        <h3>An example</h3>
+        <p>A new street runs east from Illinois St and seems to dead end. With <em>Off</em>, the route rides it, turns around and rides straight back. With <em>Some</em> or <em>Strong</em>, it's more likely to continue onto Meridian St, come down a block and return on 43rd St: a loop instead of a U-turn, for a little more distance.</p>
+
+        <h3>Good to know</h3>
+        <ul>
+          <li>The penalty only applies while planning. The miles shown are always real miles.</li>
+          <li>On every setting, the route prefers turning onto a different street over an immediate U-turn whenever both cost the same.</li>
+          <li>A true dead end (a cul-de-sac with no way through) always needs an out-and-back.</li>
+          <li><em>Ridden twice</em> in the stats shows how many repeat miles the route ended up with, so you can compare settings.</li>
+        </ul>
+      </section>
+
+      <section id="stats">
+        <h2>Route stats</h2>
+        <dl class="defs">
+          <dt>mi loop</dt><dd>Total ride distance, start to finish.</dd>
+          <dt>New road</dt><dd>Miles of untraveled road the route collects, including any it happens to ride outside the area on the way in or out.</dd>
+          <dt>Ride that's new</dt><dd>New road as a share of the whole ride. Higher is more efficient.</dd>
+          <dt>Ridden twice</dt><dd>Miles of road the route rides more than once.</dd>
+          <dt>Solve time</dt><dd>How long the route took to build, or how long Optimize ran.</dd>
+        </dl>
+        <p>If some new roads can't be reached legally from your start (usually one-way streets at the edge of the area), they're skipped and a note says how many.</p>
+      </section>
+
+      <section id="optimize">
+        <h2>Optimize</h2>
+        <p><em>Build route</em> makes one quick, good route. <em>Optimize</em> keeps trying different versions for the time you pick (10, 20 or 60 seconds): different pairings at dead ends, different directions along streets, different riding orders. Whenever it finds a better one, the map updates.</p>
+        <ul>
+          <li>"Better" means fewer miles, with repeats weighted by your <a href="#repeats">repeat setting</a>.</li>
+          <li>Press <em>Stop</em> to end early and keep the best so far.</li>
+          <li>Bigger areas have more room to improve. Small ones are often already at their best.</li>
+        </ul>
+      </section>
+
+      <section id="player">
+        <h2>Playing the route</h2>
+        <ul>
+          <li><strong>Play / Pause</strong> animates a dot along the route in riding order.</li>
+          <li><strong>The slider</strong> jumps anywhere along the route, forward or back, paused or playing. Once it's focused, arrow keys step through it.</li>
+          <li><strong>Speed:</strong> ½× (80 seconds for the whole route), 1× (40 seconds) or 2× (20 seconds).</li>
+          <li>The readout shows how far along you are, for example "6.2 of 23.1 mi".</li>
+        </ul>
+      </section>
+
+      <section id="data">
+        <h2>Where the roads come from</h2>
+        <ul>
+          <li><strong>Indiana:</strong> road data from OpenStreetMap, rebuilt monthly and hosted with this site, so it loads in seconds on any device. <em>Roads as of</em> shows the data date.</li>
+          <li><strong>Outside Indiana:</strong> roads download from public OpenStreetMap servers when you click <em>Get roads</em>. These servers can be slow; finished pieces are saved, so clicking again only fetches what's missing.</li>
+          <li><strong>Refresh roads</strong> re-downloads the roads that came from those public servers.</li>
+          <li>Wandrer also builds its maps from OpenStreetMap, so the two match closely. <em>New road matched</em> shows how much of your KMZ lined up, usually 99% or more.</li>
+        </ul>
+      </section>
+
+      <section id="privacy">
+        <h2>Your data</h2>
+        <p>Your KMZ is read in your browser and never uploaded anywhere. It's saved in this browser only, along with your start, area and settings. Another browser or device starts empty. Clearing site data for this page removes everything.</p>
+      </section>
+
+      <section id="limits">
+        <h2>Known limits</h2>
+        <ul>
+          <li>Routes never use sidewalks, crosswalks, alleys, driveways, parking lots, private roads or motorways, even where a shortcut through one looks obvious.</li>
+          <li>One-way streets are always ridden in the legal direction.</li>
+          <li>Stretches with less than 15 m of new road are ignored. They aren't worth a detour.</li>
+          <li>Near the state line, roads on the other side can't be used as connectors yet.</li>
+          <li>Routes are loops from your start. Point-to-point and a distance limit are coming.</li>
+        </ul>
+      </section>
+    </main>
+  </div>
+</body>
+</html>

@@ -56,6 +56,16 @@ body {
   font-size: 0.95rem;
 }
 
+.help-link { margin: -6px 20px 10px; color: var(--sign-ink-soft); font-size: 0.9rem; align-self: flex-start; }
+.help-link:hover { color: var(--sign-ink); }
+.help-link:focus-visible, .what:focus-visible { outline: 3px solid var(--paint); outline-offset: 2px; }
+.what {
+  display: inline-grid; place-items: center; width: 18px; height: 18px; margin-left: 4px; border-radius: 50%;
+  border: 1.5px solid var(--sign-ink-soft); color: var(--sign-ink); font-size: 0.75rem; font-weight: 800;
+  text-decoration: none; line-height: 1; padding-top: 2px; vertical-align: 1px;
+}
+.what:hover { background: var(--sign-deep); }
+
 .step { padding: 8px 20px 20px; }
 .step h2 {
   margin: 0 0 10px;

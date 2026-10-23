@@ -10,8 +10,8 @@
   <link href="https://fonts.googleapis.com/css2?family=Overpass:wght@400;600;800&display=swap" rel="stylesheet">
   <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.css">
   <!-- bump APP_VERSION and the ?v= tags on every release so browsers fetch fresh files -->
-  <script>window.APP_VERSION = "15";</script>
-  <link rel="stylesheet" href="css/style.css?v=15">
+  <script>window.APP_VERSION = "16";</script>
+  <link rel="stylesheet" href="css/style.css?v=16">
 </head>
 <body>
   <main class="layout">
@@ -20,6 +20,7 @@
         <h1>Wandrer Route Builder</h1>
         <p class="sign-sub">More new roads, fewer repeat miles</p>
       </header>
+      <a class="help-link" href="help.html" target="_blank" rel="noopener">How to use this page</a>
 
       <section class="step" id="step-map">
         <h2>Your Wandrer map</h2>
@@ -85,7 +86,8 @@
           <button class="btn btn-small" id="finish-shape" type="button">Finish shape</button>
         </div>
         <label class="field">
-          <span class="plan-k">Avoid riding a road twice</span>
+          <span class="plan-k">Avoid riding a road twice
+            <a class="what" href="help.html#repeats" target="_blank" rel="noopener" aria-label="What do these settings mean?">?</a></span>
           <select id="repeat-penalty">
             <option value="off">Off: shortest distance</option>
             <option value="some" selected>Some: small detours OK</option>
@@ -141,11 +143,11 @@
 
   <script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.js"></script>
   <script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
-  <script src="js/store.js?v=15"></script>
-  <script src="js/kmz.js?v=15"></script>
-  <script src="js/osm.js?v=15"></script>
-  <script src="js/gpx.js?v=15"></script>
-  <script src="js/plan.js?v=15"></script>
-  <script src="js/app.js?v=15"></script>
+  <script src="js/store.js?v=16"></script>
+  <script src="js/kmz.js?v=16"></script>
+  <script src="js/osm.js?v=16"></script>
+  <script src="js/gpx.js?v=16"></script>
+  <script src="js/plan.js?v=16"></script>
+  <script src="js/app.js?v=16"></script>
 </body>
 </html>
