@@ -9,3 +9,6 @@ prototype/out/
 test/data/
 __pycache__/
 .DS_Store
+
+# Road tiles are built by the GitHub Action and deployed, never committed
+data/roads/
