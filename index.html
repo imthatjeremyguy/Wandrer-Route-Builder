@@ -10,8 +10,8 @@
   <link href="https://fonts.googleapis.com/css2?family=Overpass:wght@400;600;800&display=swap" rel="stylesheet">
   <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.css">
   <!-- bump APP_VERSION and the ?v= tags on every release so browsers fetch fresh files -->
-  <script>window.APP_VERSION = "10";</script>
-  <link rel="stylesheet" href="css/style.css?v=10">
+  <script>window.APP_VERSION = "11";</script>
+  <link rel="stylesheet" href="css/style.css?v=11">
 </head>
 <body>
   <main class="layout">
@@ -84,6 +84,14 @@
           <button class="btn btn-quiet btn-small" id="undo-corner" type="button">Undo corner</button>
           <button class="btn btn-small" id="finish-shape" type="button">Finish shape</button>
         </div>
+        <label class="field">
+          <span class="plan-k">Avoid riding a road twice</span>
+          <select id="repeat-penalty">
+            <option value="off">Off: shortest distance</option>
+            <option value="some" selected>Some: small detours OK</option>
+            <option value="strong">Strong: around the block</option>
+          </select>
+        </label>
         <button class="btn" id="build-route" type="button" disabled>Build route</button>
 
         <div id="route-result" hidden>
@@ -94,9 +102,19 @@
           <dl class="facts">
             <div><dt>New road</dt><dd id="route-new">-</dd></div>
             <div><dt>Ride that's new</dt><dd id="route-eff">-</dd></div>
-            <div><dt>Connectors + repeats</dt><dd id="route-extra">-</dd></div>
+            <div><dt>Ridden twice</dt><dd id="route-repeat">-</dd></div>
             <div><dt>Solve time</dt><dd id="route-time">-</dd></div>
           </dl>
+          <div class="opt-row">
+            <button class="btn btn-quiet" id="optimize-route" type="button">Optimize</button>
+            <label class="opt-secs">for
+              <select id="optimize-secs" aria-label="Optimize time">
+                <option value="10">10 s</option>
+                <option value="20" selected>20 s</option>
+                <option value="60">60 s</option>
+              </select>
+            </label>
+          </div>
           <div class="btn-row">
             <button class="btn" id="download-gpx" type="button">Download GPX</button>
             <button class="btn btn-quiet" id="play-route" type="button">Play route</button>
@@ -116,11 +134,11 @@
 
   <script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.js"></script>
   <script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
-  <script src="js/store.js?v=10"></script>
-  <script src="js/kmz.js?v=10"></script>
-  <script src="js/osm.js?v=10"></script>
-  <script src="js/gpx.js?v=10"></script>
-  <script src="js/plan.js?v=10"></script>
-  <script src="js/app.js?v=10"></script>
+  <script src="js/store.js?v=11"></script>
+  <script src="js/kmz.js?v=11"></script>
+  <script src="js/osm.js?v=11"></script>
+  <script src="js/gpx.js?v=11"></script>
+  <script src="js/plan.js?v=11"></script>
+  <script src="js/app.js?v=11"></script>
 </body>
 </html>

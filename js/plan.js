@@ -149,40 +149,79 @@
     $("build-route").disabled = !(network && start && area);
   }
 
-  // ---------- solve ----------
+  // ---------- solve + optimize ----------
+  const PENALTY = { off: 0, some: 0.5, strong: 1.5 };
+  let optimizing = false, firstTotal = null;
+
+  function onWorker(e) {
+    const d = e.data;
+    if (d.progress) { say(d.progress); return; }
+    if (d.error) { setBusy(false); say(d.error, true); return; }
+    if (d.result) {
+      const keepView = !!route; // improvements redraw in place without re-zooming
+      showRoute(d.result, keepView);
+      if (d.final) {
+        setBusy(false);
+        if (d.optimized) {
+          const saved = (firstTotal - d.result.totalM) * M2MI;
+          say(`Optimized: ${d.result.tries} tries. ` + (saved > 0.05 ? `${saved.toFixed(1)} mi shorter than the first pass.` :
+            "The first pass was already the best found."));
+        }
+      }
+    }
+  }
+
+  function setBusy(b, opt = false) {
+    optimizing = b && opt;
+    $("build-route").disabled = b || !(network && start && area);
+    $("optimize-route").textContent = optimizing ? "Stop" : "Optimize";
+    $("optimize-route").disabled = b && !opt;
+    $("repeat-penalty").disabled = b;
+  }
+
   function build() {
     if (!(network && start && area)) return;
     cancelMode(); clearRoute();
-    $("build-route").disabled = true;
+    setBusy(true);
     say("Building route...");
-    worker.onmessage = e => {
-      if (e.data.progress) { say(e.data.progress); return; }
-      $("build-route").disabled = false;
-      if (e.data.error) { say(e.data.error, true); return; }
-      showRoute(e.data.result);
-    };
-    worker.postMessage({ type: "solve", start, ring: area });
+    worker.onmessage = onWorker;
+    worker.postMessage({ type: "solve", start, ring: area, penalty: PENALTY[$("repeat-penalty").value] ?? 0.5 });
   }
 
-  function showRoute(r) {
+  function optimize() {
+    if (optimizing) { worker.postMessage({ type: "stop" }); return; }
+    if (!route) return;
+    stopPlay();
+    firstTotal = firstTotal ?? route.totalM;
+    setBusy(true, true);
+    say("Optimizing...");
+    worker.onmessage = onWorker;
+    worker.postMessage({ type: "optimize", seconds: Number($("optimize-secs").value) || 20 });
+  }
+
+  function showRoute(r, keepView) {
+    if (!route) firstTotal = r.totalM;
     route = r;
-    routeLine = L.polyline(r.coords.map(([x, y]) => [y, x]), { color: ROUTE, weight: 3.5, opacity: 0.9 }).addTo(map);
-    map.fitBounds(routeLine.getBounds(), { padding: [24, 24] });
+    if (routeLine) routeLine.setLatLngs(r.coords.map(([x, y]) => [y, x]));
+    else routeLine = L.polyline(r.coords.map(([x, y]) => [y, x]), { color: ROUTE, weight: 3.5, opacity: 0.9 }).addTo(map);
+    if (!keepView) map.fitBounds(routeLine.getBounds(), { padding: [24, 24] });
     $("route-result").hidden = false;
     $("route-total").textContent = fmtMi(r.totalM);
     $("route-new").textContent = `${fmtMi(r.newM)} mi`;
     $("route-eff").textContent = `${Math.round(100 * r.newM / r.totalM)}%`;
-    $("route-extra").textContent = `${fmtMi(r.totalM - r.newM)} mi`;
+    $("route-repeat").textContent = `${fmtMi(r.repeatM)} mi`;
     $("route-time").textContent = `${(r.ms / 1000).toFixed(1)} s`;
-    $("route-result").scrollIntoView({ block: "nearest", behavior: matchMedia("(prefers-reduced-motion: reduce)").matches ? "auto" : "smooth" });
+    if (!keepView) $("route-result").scrollIntoView({ block: "nearest", behavior: matchMedia("(prefers-reduced-motion: reduce)").matches ? "auto" : "smooth" });
     const notes = [];
     if (r.dropped) notes.push(`${r.dropped} new road piece${r.dropped > 1 ? "s" : ""} can't be reached legally from this start and ${r.dropped > 1 ? "were" : "was"} skipped.`);
     if (r.wrongWay) notes.push(`Warning: ${r.wrongWay} wrong-way segment${r.wrongWay > 1 ? "s" : ""}.`);
-    say(notes.join(" "));
+    if (!optimizing) say(notes.join(" "));
   }
 
   function clearRoute() {
     stopPlay();
+    if (optimizing && worker) worker.postMessage({ type: "stop" });
+    firstTotal = null;
     if (routeLine) { map.removeLayer(routeLine); routeLine = null; }
     route = null; $("route-result").hidden = true;
   }
@@ -223,6 +262,9 @@
       $("build-route").addEventListener("click", build);
       $("play-route").addEventListener("click", play);
       $("download-gpx").addEventListener("click", gpx);
+      $("optimize-route").addEventListener("click", optimize);
+      Store.get("penalty").then(v => { if (v && PENALTY[v] !== undefined) $("repeat-penalty").value = v; });
+      $("repeat-penalty").addEventListener("change", e => { Store.set("penalty", e.target.value); clearRoute(); say(""); });
       document.addEventListener("keydown", e => { if (e.key === "Escape" && mode) { cancelMode(); say(""); } });
       Store.get("start").then(s => { if (s) setStart(L.latLng(s[1], s[0]), false); });
       Store.get("area").then(a => {
