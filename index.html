@@ -10,8 +10,8 @@
   <link href="https://fonts.googleapis.com/css2?family=Overpass:wght@400;600;800&display=swap" rel="stylesheet">
   <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.css">
   <!-- bump APP_VERSION and the ?v= tags on every release so browsers fetch fresh files -->
-  <script>window.APP_VERSION = "9";</script>
-  <link rel="stylesheet" href="css/style.css?v=9">
+  <script>window.APP_VERSION = "10";</script>
+  <link rel="stylesheet" href="css/style.css?v=10">
 </head>
 <body>
   <main class="layout">
@@ -76,8 +76,8 @@
         <div class="plan-row">
           <div><span class="plan-k">Area</span><span class="plan-v" id="area-label">Not drawn</span></div>
           <div class="btn-pair">
-            <button class="btn btn-quiet btn-small" id="draw-box" type="button">Box</button>
-            <button class="btn btn-quiet btn-small" id="draw-shape" type="button">Shape</button>
+            <button class="btn btn-quiet btn-small" id="draw-shape" type="button">Draw</button>
+            <button class="btn btn-quiet btn-small" id="clear-area" type="button" disabled>Clear</button>
           </div>
         </div>
         <div class="btn-row" id="shape-tools" hidden>
@@ -116,11 +116,11 @@
 
   <script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.js"></script>
   <script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
-  <script src="js/store.js?v=9"></script>
-  <script src="js/kmz.js?v=9"></script>
-  <script src="js/osm.js?v=9"></script>
-  <script src="js/gpx.js?v=9"></script>
-  <script src="js/plan.js?v=9"></script>
-  <script src="js/app.js?v=9"></script>
+  <script src="js/store.js?v=10"></script>
+  <script src="js/kmz.js?v=10"></script>
+  <script src="js/osm.js?v=10"></script>
+  <script src="js/gpx.js?v=10"></script>
+  <script src="js/plan.js?v=10"></script>
+  <script src="js/app.js?v=10"></script>
 </body>
 </html>

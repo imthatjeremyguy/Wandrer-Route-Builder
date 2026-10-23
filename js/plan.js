@@ -52,39 +52,12 @@
     return inside;
   }
 
-  function drawBox() {
+  function clearArea() {
     cancelMode();
-    mode = "box";
-    const el = map.getContainer();
-    el.classList.add("picking");
-    map.dragging.disable();
-    say("Drag a box over the roads you want to collect. Esc cancels.");
-    let a = null, tmp = null;
-    const ll = e => map.mouseEventToLatLng(e);
-    const down = e => { if (e.button > 0) return; a = ll(e); el.setPointerCapture?.(e.pointerId); e.preventDefault(); };
-    const move = e => {
-      if (!a) return;
-      const b = L.latLngBounds(a, ll(e));
-      if (!tmp) tmp = L.rectangle(b, { ...AREA_STYLE, dashArray: null, fillOpacity: 0.1 }).addTo(map);
-      else tmp.setBounds(b);
-    };
-    const up = e => {
-      if (!a) return;
-      const b = L.latLngBounds(a, ll(e));
-      cleanup();
-      if (map.latLngToContainerPoint(b.getNorthWest()).distanceTo(map.latLngToContainerPoint(b.getSouthEast())) < 12) {
-        say("That box was too small. Press Draw box and drag across the roads.", true); return;
-      }
-      const [w, s, e2, n] = [b.getWest(), b.getSouth(), b.getEast(), b.getNorth()];
-      setArea([[w, s], [e2, s], [e2, n], [w, n]]); say("");
-    };
-    function cleanup() {
-      el.removeEventListener("pointerdown", down); el.removeEventListener("pointermove", move); el.removeEventListener("pointerup", up);
-      if (tmp) map.removeLayer(tmp);
-      map.dragging.enable(); el.classList.remove("picking"); mode = null; cancelMode.fn = null;
-    }
-    el.addEventListener("pointerdown", down); el.addEventListener("pointermove", move); el.addEventListener("pointerup", up);
-    cancelMode.fn = cleanup;
+    if (areaRect) { map.removeLayer(areaRect); areaRect = null; }
+    area = null;
+    Store.del("area");
+    clearRoute(); refresh(); say("");
   }
 
   /* Shape: click (or tap) corners; click the first corner, double-click, or press
@@ -171,6 +144,8 @@
 
   function refresh() {
     $("area-label").textContent = area ? `${fmtMi(areaNewMiles())} new mi inside` : "Not drawn";
+    $("draw-shape").textContent = area ? "Redraw" : "Draw";
+    $("clear-area").disabled = !area;
     $("build-route").disabled = !(network && start && area);
   }
 
@@ -243,8 +218,8 @@
     init(m) {
       map = m;
       $("set-start").addEventListener("click", pickStart);
-      $("draw-box").addEventListener("click", drawBox);
       $("draw-shape").addEventListener("click", drawShape);
+      $("clear-area").addEventListener("click", clearArea);
       $("build-route").addEventListener("click", build);
       $("play-route").addEventListener("click", play);
       $("download-gpx").addEventListener("click", gpx);
