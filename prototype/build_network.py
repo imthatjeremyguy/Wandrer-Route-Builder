@@ -11,7 +11,8 @@ from shapely.strtree import STRtree
 
 OSM, KML, OUT = sys.argv[1], sys.argv[2], sys.argv[3].rstrip('/')
 LAT0 = 39.84
-MX, MY = 111320 * math.cos(math.radians(LAT0)), 110540
+MY = 111195.08
+MX = MY * math.cos(math.radians(LAT0))  # metres per degree, spherical earth (matches haversine)
 M2MI = 1 / 1609.344
 MATCH_DIST_M = 6      # untraveled line must be within this distance of the road
 MATCH_ANGLE = 25      # and roughly parallel (degrees)

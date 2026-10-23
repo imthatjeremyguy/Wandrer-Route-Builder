@@ -89,9 +89,9 @@
   async function afterKmz() {
     clear("connectors"); clear("newRoads");
     $("roads-loaded").hidden = true; $("roads-empty").hidden = false;
-    const osm = await Osm.cached(wandrer.bbox);
-    if (osm) await buildNetwork(osm);
-    else say("roads-msg", "");
+    // roads load automatically when no Overpass download is needed
+    if (await Osm.available(wandrer.bbox)) await getRoads(false);
+    else say("roads-msg", "Part of this area is outside the built-in Indiana roads. Get roads downloads the rest from OpenStreetMap.");
   }
 
   async function getRoads(force) {
@@ -138,7 +138,7 @@
     $("net-new").textContent = `${(s.newM * M2MI).toFixed(2)} mi (${pct}%)`;
     $("net-ride").textContent = `${Math.round(s.rideableM * M2MI).toLocaleString()} mi`;
     $("net-date").textContent = fmtDate(net.osmDate);
-    const dl = net.downloadMs == null ? "cached" : fmtSecs(net.downloadMs);
+    const dl = fmtSecs(net.downloadMs ?? 0);
     $("net-time").textContent = `${dl} / ${fmtSecs(s.ms)}`;
   }
 

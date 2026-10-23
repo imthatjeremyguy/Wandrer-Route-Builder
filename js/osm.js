@@ -1,7 +1,8 @@
-/* Fetch rideable OSM roads from the Overpass API in cached tiles.
- * Big areas (a whole county) are split into ~0.1 degree tiles so each request
- * stays small; every tile is saved as it arrives, so a retry only fetches
- * what's missing. */
+/* Rideable OSM roads in 0.1-degree tiles.
+ * 1. The site's own tiles (data/roads/, built monthly by the GitHub Action
+ *    from Geofabrik's Indiana extract) are used wherever they exist.
+ * 2. Tiles outside that coverage fall back to the Overpass API; those are
+ *    saved in this browser so a retry only fetches what's missing. */
 (function () {
   const SERVERS = [
     "https://overpass-api.de/api/interpreter",
@@ -29,13 +30,38 @@ out body geom qt;`;
     for (let x = Math.floor(w / TILE); x * TILE < e; x++) {
       for (let y = Math.floor(s / TILE); y * TILE < n; y++) {
         const box = [x * TILE, y * TILE, (x + 1) * TILE, (y + 1) * TILE].map(v => +v.toFixed(4));
-        tiles.push({ key: `tile:${x},${y}`, box });
+        tiles.push({ key: `tile:${x},${y}`, id: `${x}_${y}`, box });
       }
     }
     return tiles;
   }
 
   const sleep = ms => new Promise(r => setTimeout(r, ms));
+
+  // ---------- the site's own road tiles ----------
+  const LOCAL = "data/roads/";
+  let indexPromise = null;
+  function localIndex() {
+    // index.json is tiny and changes monthly: revalidate it every visit
+    indexPromise ??= fetch(LOCAL + "index.json", { cache: "no-cache" })
+      .then(r => (r.ok ? r.json() : null)).catch(() => null);
+    return indexPromise;
+  }
+  const undelta = d => { let v = 0; return d.map(x => (v += x)); };
+  function decodeTile(doc, fetchedAt) {
+    const elements = doc.ways.map(([id, ti, n, lo, la]) => {
+      const lons = undelta(lo), lats = undelta(la);
+      return { type: "way", id, nodes: undelta(n), tags: doc.tags[ti],
+               geometry: lons.map((x, i) => ({ lon: x / 1e6, lat: lats[i] / 1e6 })) };
+    });
+    return { elements, signals: doc.sig || [], fetchedAt };
+  }
+  async function fetchLocal(tile, index) {
+    // URL carries the build date, so the browser can cache it until next month's build
+    const res = await fetch(`${LOCAL}${tile.id}.json?b=${encodeURIComponent(index.built)}`);
+    if (!res.ok) throw new Error(`site tile ${tile.id} answered ${res.status}`);
+    return decodeTile(await res.json(), index.osm_date || index.built);
+  }
 
   const TIMEOUT_MS = 75000;  // give up on a server after this and try the next one
   const host = url => new URL(url).host;
@@ -94,27 +120,46 @@ out body geom qt;`;
       Math.min(...tiles.map(t => t.box[0])), Math.min(...tiles.map(t => t.box[1])),
       Math.max(...tiles.map(t => t.box[2])), Math.max(...tiles.map(t => t.box[3])),
     ];
-    return { box, elements, fetchedAt: oldest, tiles: tiles.length };
+    const signals = [...new Set(tileData.flatMap(t => t.signals || []))];
+    return { box, elements, signals, fetchedAt: oldest, tiles: tiles.length };
   }
 
-  /** Roads for bbox from the browser cache only; null if any tile is missing. */
-  async function cached(bbox) {
-    const tiles = tilesFor(bbox);
-    const data = [];
-    for (const t of tiles) {
-      const d = await Store.get(t.key);
-      if (!d) return null;
-      data.push(d);
+  /** True when every tile is on the site or saved in this browser (no Overpass needed). */
+  async function available(bbox) {
+    const index = await localIndex();
+    for (const t of tilesFor(bbox)) {
+      if (index?.tiles?.[t.id] !== undefined) continue;
+      if (!(await Store.get(t.key))) return false;
     }
-    return merge(data, tiles);
+    return true;
   }
 
   /** Download missing tiles (all tiles when force), then return merged roads. */
   async function fetchRoads(bbox, onProgress, force = false) {
     const tiles = tilesFor(bbox);
     const data = new Array(tiles.length);
+    const index = await localIndex();
+    const t0 = performance.now();
+
+    // 1. site tiles, several at a time (static files, fast)
+    const local = tiles.map((t, i) => i).filter(i => index?.tiles?.[tiles[i].id] !== undefined);
+    let loaded = 0, q = 0;
+    const localLane = async () => {
+      while (q < local.length) {
+        const i = local[q++];
+        data[i] = await fetchLocal(tiles[i], index);
+        onProgress?.(`Loading roads: ${++loaded} of ${local.length} tiles`);
+      }
+    };
+    if (local.length) {
+      onProgress?.(`Loading roads: 0 of ${local.length} tiles`);
+      await Promise.all(Array.from({ length: Math.min(6, local.length) }, localLane));
+    }
+
+    // 2. anything outside the site's coverage: browser cache, then Overpass
     const todo = [];
     for (let i = 0; i < tiles.length; i++) {
+      if (data[i]) continue;
       const d = force ? null : await Store.get(tiles[i].key);
       if (d) data[i] = d; else todo.push(i);
     }
@@ -125,8 +170,7 @@ out body geom qt;`;
       const lines = [...active].map(([i, txt]) => `Tile ${i + 1}: ${txt}`);
       onProgress?.([head, ...lines].join("\n"));
     };
-    report();
-    const t0 = performance.now();
+    if (todo.length) report();
 
     let next = 0;
     async function lane() {
@@ -146,7 +190,7 @@ out body geom qt;`;
       }
     }
     await Promise.all(Array.from({ length: Math.min(PARALLEL, todo.length) }, lane));
-    const downloadMs = todo.length ? performance.now() - t0 : null;
+    const downloadMs = performance.now() - t0;
 
     if (failed) {
       throw new Error(`${failed} of ${tiles.length} road tiles couldn't be downloaded; the OpenStreetMap servers are busy. ` +
@@ -155,5 +199,5 @@ out body geom qt;`;
     return { ...merge(data, tiles), downloadMs };
   }
 
-  window.Osm = { fetchRoads, cached, tilesFor };
+  window.Osm = { fetchRoads, available, tilesFor, localIndex };
 })();

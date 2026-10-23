@@ -45,7 +45,7 @@ self.onmessage = (e) => {
   let latSum = 0, latN = 0;
   for (const l of lines) for (const p of l.coords) { latSum += p[1]; latN++; }
   const lat0 = latN ? latSum / latN : 39.8;
-  const MX = 111320 * Math.cos(lat0 * Math.PI / 180), MY = 110540;
+  const MY = 111195.08, MX = MY * Math.cos(lat0 * Math.PI / 180); // metres per degree, spherical earth (matches haversine)
   const P = ([lon, lat]) => [lon * MX, lat * MY];
 
   // ---- spatial index of untraveled pieces ----

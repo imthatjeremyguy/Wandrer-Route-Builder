@@ -32,9 +32,9 @@ env:
 
 jobs:
   build:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
 
       - name: Month key for the tile cache
         id: month
@@ -43,14 +43,14 @@ jobs:
       - name: Restore this month's road tiles
         id: cache
         if: ${{ !inputs.rebuild }}
-        uses: actions/cache/restore@v4
+        uses: actions/cache/restore@v5
         with:
           path: data/roads
           key: roads-indiana-${{ steps.month.outputs.ym }}-${{ hashFiles('tools/build_roads.py') }}
 
       - name: Set up Python
         if: steps.cache.outputs.cache-hit != 'true'
-        uses: actions/setup-python@v5
+        uses: actions/setup-python@v6
         with:
           python-version: "3.12"
 
@@ -65,7 +65,7 @@ jobs:
 
       - name: Save road tiles for later pushes this month
         if: steps.cache.outputs.cache-hit != 'true'
-        uses: actions/cache/save@v4
+        uses: actions/cache/save@v5
         with:
           path: data/roads
           key: roads-indiana-${{ steps.month.outputs.ym }}-${{ hashFiles('tools/build_roads.py') }}
@@ -78,16 +78,16 @@ jobs:
           touch _site/.nojekyll
           du -sh _site
 
-      - uses: actions/upload-pages-artifact@v3
+      - uses: actions/upload-pages-artifact@v5
         with:
           path: _site
 
   deploy:
     needs: build
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     environment:
       name: github-pages
       url: ${{ steps.deployment.outputs.page_url }}
     steps:
       - id: deployment
-        uses: actions/deploy-pages@v4
+        uses: actions/deploy-pages@v5
