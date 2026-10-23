@@ -1,0 +1,11 @@
+# Personal ride data never goes in the public repo
+*.kmz
+*.kml
+*.osm
+*.gpx
+*.pkl
+prototype/data/
+prototype/out/
+test/data/
+__pycache__/
+.DS_Store

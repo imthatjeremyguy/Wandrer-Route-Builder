@@ -1,0 +1,147 @@
+:root {
+  --sign: #12573a;          /* highway guide-sign green */
+  --sign-deep: #0c4029;
+  --sign-ink: #ffffff;
+  --sign-ink-soft: #cfe3d8;
+  --paint: #f2b705;         /* road-paint yellow: focus and highlights */
+  --untraveled: #e0362c;    /* Wandrer's untraveled red */
+  --route: #1d5fd1;
+  --page: #e9ecef;
+  --radius-sign: 10px;
+  --font: "Overpass", system-ui, sans-serif;
+}
+
+* { box-sizing: border-box; }
+[hidden] { display: none !important; }
+html, body { margin: 0; height: 100%; }
+body {
+  font-family: var(--font);
+  background: var(--page);
+  color: #1b1f23;
+  -webkit-font-smoothing: antialiased;
+}
+
+.layout {
+  display: grid;
+  grid-template-columns: 340px 1fr;
+  height: 100dvh;
+}
+
+/* ---------- panel ---------- */
+.panel {
+  background: var(--sign);
+  color: var(--sign-ink);
+  display: flex;
+  flex-direction: column;
+  overflow-y: auto;
+  z-index: 2;
+}
+
+.sign {
+  margin: 16px;
+  padding: 18px 20px 16px;
+  border: 3px solid var(--sign-ink);
+  border-radius: var(--radius-sign);
+}
+.sign h1 {
+  margin: 0;
+  font-size: 1.6rem;
+  line-height: 1.1;
+  font-weight: 800;
+  letter-spacing: 0.01em;
+}
+.sign-sub {
+  margin: 6px 0 0;
+  color: var(--sign-ink-soft);
+  font-size: 0.95rem;
+}
+
+.step { padding: 8px 20px 20px; }
+.step h2 {
+  margin: 0 0 10px;
+  font-size: 1.05rem;
+  font-weight: 600;
+}
+.step p { margin: 0 0 14px; line-height: 1.5; color: var(--sign-ink-soft); }
+
+.readout {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  margin-bottom: 12px;
+}
+.readout-num {
+  font-size: 3rem;
+  font-weight: 800;
+  line-height: 1;
+  font-variant-numeric: tabular-nums;
+}
+.readout-unit { font-size: 1rem; color: var(--sign-ink-soft); }
+
+.facts { margin: 0 0 16px; display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+.facts div { border-top: 1px solid rgba(255,255,255,0.25); padding-top: 6px; }
+.facts dt { font-size: 0.8rem; color: var(--sign-ink-soft); }
+.facts dd { margin: 2px 0 0; font-weight: 600; font-variant-numeric: tabular-nums; }
+
+.btn {
+  display: inline-block;
+  font: inherit;
+  font-weight: 600;
+  padding: 10px 18px 8px;
+  border-radius: 6px;
+  background: var(--sign-ink);
+  color: var(--sign);
+  border: 2px solid var(--sign-ink);
+  cursor: pointer;
+}
+.btn:hover { background: var(--sign-ink-soft); border-color: var(--sign-ink-soft); }
+.btn-quiet { background: transparent; color: var(--sign-ink); }
+.btn-quiet:hover { background: var(--sign-deep); border-color: var(--sign-ink); }
+.btn:focus-visible, #kmz-input:focus-visible + .btn {
+  outline: 3px solid var(--paint);
+  outline-offset: 2px;
+}
+
+.msg { min-height: 1.2em; margin: 12px 0 0 !important; font-size: 0.9rem; }
+.msg.error { color: #ffd2cc; }
+
+.panel-foot { margin-top: auto; padding: 16px 20px; font-size: 0.85rem; color: var(--sign-ink-soft); }
+.panel-foot p { margin: 0; }
+
+/* ---------- map ---------- */
+#map { height: 100%; width: 100%; background: var(--page); }
+.leaflet-container { font-family: var(--font); }
+
+.drop-hint {
+  position: fixed;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  background: rgba(18, 87, 58, 0.85);
+  color: var(--sign-ink);
+  font-size: 1.6rem;
+  font-weight: 800;
+  z-index: 1000;
+  pointer-events: none;
+}
+
+/* ---------- phone: map on top, panel as a bottom sheet ---------- */
+@media (max-width: 720px) {
+  .layout { grid-template-columns: 1fr; grid-template-rows: 1fr auto; }
+  #map { grid-row: 1; }
+  .panel { grid-row: 2; max-height: 46dvh; border-radius: 14px 14px 0 0; }
+  .sign { margin: 12px 16px 4px; padding: 12px 14px 10px; }
+  .sign h1 { font-size: 1.25rem; }
+  .sign-sub { display: none; }
+  .step { padding: 8px 16px 16px; }
+  .readout-num { font-size: 2.4rem; }
+  .panel-foot { padding: 8px 16px 14px; }
+}
+
+@media (prefers-color-scheme: dark) {
+  :root { --page: #1c2024; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  * { transition: none !important; animation: none !important; }
+}
