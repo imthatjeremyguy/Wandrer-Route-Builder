@@ -10,8 +10,8 @@
   <link href="https://fonts.googleapis.com/css2?family=Overpass:wght@400;600;800&display=swap" rel="stylesheet">
   <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.css">
   <!-- bump APP_VERSION and the ?v= tags on every release so browsers fetch fresh files -->
-  <script>window.APP_VERSION = "16";</script>
-  <link rel="stylesheet" href="css/style.css?v=16">
+  <script>window.APP_VERSION = "17";</script>
+  <link rel="stylesheet" href="css/style.css?v=17">
 </head>
 <body>
   <main class="layout">
@@ -86,12 +86,12 @@
           <button class="btn btn-small" id="finish-shape" type="button">Finish shape</button>
         </div>
         <label class="field">
-          <span class="plan-k">Avoid riding a road twice
-            <a class="what" href="help.html#repeats" target="_blank" rel="noopener" aria-label="What do these settings mean?">?</a></span>
+          <span class="plan-k">Smooth riding
+            <a class="what" href="help.html#smooth" target="_blank" rel="noopener" aria-label="What do these settings mean?">?</a></span>
           <select id="repeat-penalty">
             <option value="off">Off: shortest distance</option>
-            <option value="some" selected>Some: small detours OK</option>
-            <option value="strong">Strong: around the block</option>
+            <option value="some" selected>Some: fewer U-turns</option>
+            <option value="strong">Strong: loops over U-turns</option>
           </select>
         </label>
         <button class="btn" id="build-route" type="button" disabled>Build route</button>
@@ -105,6 +105,8 @@
             <div><dt>New road</dt><dd id="route-new">-</dd></div>
             <div><dt>Ride that's new</dt><dd id="route-eff">-</dd></div>
             <div><dt>Ridden twice</dt><dd id="route-repeat">-</dd></div>
+            <div><dt>U-turns</dt><dd id="route-uturns">-</dd></div>
+            <div><dt>Turns</dt><dd id="route-turns">-</dd></div>
             <div><dt>Solve time</dt><dd id="route-time">-</dd></div>
           </dl>
           <div class="opt-row">
@@ -143,11 +145,11 @@
 
   <script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.js"></script>
   <script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
-  <script src="js/store.js?v=16"></script>
-  <script src="js/kmz.js?v=16"></script>
-  <script src="js/osm.js?v=16"></script>
-  <script src="js/gpx.js?v=16"></script>
-  <script src="js/plan.js?v=16"></script>
-  <script src="js/app.js?v=16"></script>
+  <script src="js/store.js?v=17"></script>
+  <script src="js/kmz.js?v=17"></script>
+  <script src="js/osm.js?v=17"></script>
+  <script src="js/gpx.js?v=17"></script>
+  <script src="js/plan.js?v=17"></script>
+  <script src="js/app.js?v=17"></script>
 </body>
 </html>

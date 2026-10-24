@@ -8,7 +8,7 @@
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Overpass:wght@400;600;800&display=swap" rel="stylesheet">
-  <link rel="stylesheet" href="css/help.css?v=16">
+  <link rel="stylesheet" href="css/help.css?v=17">
 </head>
 <body>
   <header class="help-top">
@@ -25,7 +25,7 @@
         <li><a href="#quick-start">Quick start</a></li>
         <li><a href="#colors">What the map shows</a></li>
         <li><a href="#area">Drawing and editing the area</a></li>
-        <li><a href="#repeats">Avoid riding a road twice</a></li>
+        <li><a href="#smooth">Smooth riding</a></li>
         <li><a href="#stats">Route stats</a></li>
         <li><a href="#optimize">Optimize</a></li>
         <li><a href="#player">Playing the route</a></li>
@@ -44,7 +44,7 @@
           <li><strong>Upload the KMZ.</strong> Click <em>Upload KMZ</em> or drag the file onto the page. Your untraveled roads appear in red, and the road network loads on its own.</li>
           <li><strong>Set your start.</strong> Click <em>Set start</em>, then click the map. Drag the S marker to fine tune it.</li>
           <li><strong>Draw an area.</strong> Click <em>Draw</em> and click corners around the roads you want to collect. See <a href="#area">drawing and editing</a>.</li>
-          <li><strong>Pick a repeat setting.</strong> <em>Some</em> is a good default. See <a href="#repeats">what the settings mean</a>.</li>
+          <li><strong>Pick a Smooth riding setting.</strong> <em>Some</em> is a good default. See <a href="#smooth">what the settings mean</a>.</li>
           <li><strong>Build the route.</strong> The loop leaves your start, rides every new road in the area, and comes back.</li>
           <li><strong>Optimize (optional).</strong> Lets the solver spend 10 to 60 seconds looking for a better loop.</li>
           <li><strong>Download GPX</strong> and import it into Strava, RideWithGPS or Garmin Connect.</li>
@@ -85,44 +85,44 @@
         <p class="note">Any change to the area clears the current route. Press <em>Build route</em> again to get the updated one.</p>
       </section>
 
-      <section id="repeats">
-        <h2>Avoid riding a road twice</h2>
-        <p>Every new road in the area gets ridden once. The extra miles come from getting between them: leaving a dead end, working around one-way streets, and linking separate clusters of new road. Sometimes the shortest way to do that is to ride back down a street you just covered. This setting decides how hard the route tries to avoid that.</p>
+      <section id="smooth">
+        <h2>Smooth riding</h2>
+        <p>Every new road in the area gets ridden once. The extra miles come from getting between them: leaving dead ends, working around one-way streets, and linking separate clusters of new road. The shortest way to do that often means turning around in the middle of an intersection and riding back the way you came. That's efficient on paper, but it kills your momentum. This setting decides how much extra distance a smoother ride is worth.</p>
 
         <div class="table-wrap">
           <table>
             <thead>
-              <tr><th scope="col">Setting</th><th scope="col">How the route plans</th><th scope="col">Best when</th></tr>
+              <tr><th scope="col">Setting</th><th scope="col">What the route does</th><th scope="col">Best when</th></tr>
             </thead>
             <tbody>
               <tr>
                 <th scope="row">Off</th>
-                <td>Shortest total distance, nothing else. Riding a street a second time costs the same as any other mile, so out-and-backs are common.</td>
-                <td>You want the fewest miles and don't mind U-turns.</td>
+                <td>Shortest total distance, nothing else. U-turns at intersections are common.</td>
+                <td>You want the fewest miles.</td>
               </tr>
               <tr>
                 <th scope="row">Some</th>
-                <td>Each mile of new road ridden a second time counts as 1.5 miles while planning. A short detour around the block beats doubling back.</td>
-                <td>Most rides. Small trade of distance for flow.</td>
+                <td>Replaces a U-turn with a loop back (through the next intersection and around the block) when the loop adds less than about 400 m. Connectors favor straight streets over zig-zags.</td>
+                <td>Most rides. Roughly half the U-turns of Off for a few percent more distance.</td>
               </tr>
               <tr>
                 <th scope="row">Strong</th>
-                <td>Each mile ridden a second time counts as 2.5 miles. The route goes around the block even when that's noticeably longer.</td>
-                <td>Keeping momentum matters more than a few extra miles.</td>
+                <td>Same idea with an allowance of about 900 m per U-turn, a stronger pull toward straight lines, and a small nudge against riding new road twice.</td>
+                <td>Flow matters more than distance. Close to the fewest U-turns possible.</td>
               </tr>
             </tbody>
           </table>
         </div>
 
         <h3>An example</h3>
-        <p>A new street runs east from Illinois St and seems to dead end. With <em>Off</em>, the route rides it, turns around and rides straight back. With <em>Some</em> or <em>Strong</em>, it's more likely to continue onto Meridian St, come down a block and return on 43rd St: a loop instead of a U-turn, for a little more distance.</p>
+        <p>The route finishes part of a street, then later comes back along the rest of it. When it reaches the part it already rode, <em>Off</em> turns around right there. <em>Some</em> and <em>Strong</em> ride on through the finished section and loop back on the next street over: a ladder or figure eight instead of a U-turn.</p>
 
         <h3>Good to know</h3>
         <ul>
-          <li>The penalty only applies while planning. The miles shown are always real miles.</li>
-          <li>On every setting, the route prefers turning onto a different street over an immediate U-turn whenever both cost the same.</li>
-          <li>A true dead end (a cul-de-sac with no way through) always needs an out-and-back.</li>
-          <li><em>Ridden twice</em> in the stats shows how many repeat miles the route ended up with, so you can compare settings.</li>
+          <li>On every setting, the route goes straight through an intersection when that's as good as turning, which builds natural ladders and long straight runs.</li>
+          <li>True dead ends (a cul-de-sac with no way through) always need a U-turn. Those count in the stats on every setting.</li>
+          <li>Loops re-ride a little road you've already done this ride. That's expected, and it's why <em>Ridden twice</em> can go up a bit as U-turns go down.</li>
+          <li>The extra cost of turns and U-turns only applies while planning. The miles shown are always real miles.</li>
         </ul>
       </section>
 
@@ -133,6 +133,8 @@
           <dt>New road</dt><dd>Miles of untraveled road the route collects, including any it happens to ride outside the area on the way in or out.</dd>
           <dt>Ride that's new</dt><dd>New road as a share of the whole ride. Higher is more efficient.</dd>
           <dt>Ridden twice</dt><dd>Miles of road the route rides more than once.</dd>
+          <dt>U-turns</dt><dd>Times the route turns around, including at true dead ends.</dd>
+          <dt>Turns</dt><dd>Turns of more than about 35 degrees. Fewer means longer straight runs.</dd>
           <dt>Solve time</dt><dd>How long the route took to build, or how long Optimize ran.</dd>
         </dl>
         <p>If some new roads can't be reached legally from your start (usually one-way streets at the edge of the area), they're skipped and a note says how many.</p>
@@ -142,7 +144,7 @@
         <h2>Optimize</h2>
         <p><em>Build route</em> makes one quick, good route. <em>Optimize</em> keeps trying different versions for the time you pick (10, 20 or 60 seconds): different pairings at dead ends, different directions along streets, different riding orders. Whenever it finds a better one, the map updates.</p>
         <ul>
-          <li>"Better" means fewer miles, with repeats weighted by your <a href="#repeats">repeat setting</a>.</li>
+          <li>"Better" means fewer miles, with U-turns, turns and repeats weighed by your <a href="#smooth">Smooth riding</a> setting.</li>
           <li>Press <em>Stop</em> to end early and keep the best so far.</li>
           <li>Bigger areas have more room to improve. Small ones are often already at their best.</li>
         </ul>

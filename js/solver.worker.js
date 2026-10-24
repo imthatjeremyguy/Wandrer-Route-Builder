@@ -5,15 +5,17 @@
  *
  * Messages in:
  *   {type:"network", nodes, edges}                         once per network
- *   {type:"solve", start:[lon,lat], ring:[[lon,lat],...], penalty}   first pass
+ *   {type:"solve", start:[lon,lat], ring:[[lon,lat],...], style}   first pass
  *   {type:"optimize", seconds}                             improve the last solve
  *   {type:"stop"}                                          end optimizing early
  * Messages out:
  *   {progress:"..."}  {result:{...}, final:true|false}  {error:"..."}
  *
- * penalty: extra cost per metre of riding a road a second time (0 = pure
- * distance). It steers return trips around the block instead of back down
- * the street just ridden.
+ * style: how much distance a smoother ride is worth (all 0 = shortest distance)
+ *   repeat  extra cost per metre of riding new road a second time
+ *   turn    metres a turn costs (connectors follow straight streets)
+ *   uturn   metres a U-turn costs; U-turns at intersections with another way
+ *           out are replaced by a loop when the loop is cheaper than this
  */
 const MIN_NEW_M = 15;      // a block needs at least this much new road to be worth riding
 const MARGIN_DEG = 0.02;   // ~2 km of extra roads around the area for detours
@@ -29,7 +31,7 @@ self.onmessage = (e) => {
     else if (m.type === "solve") {
       if (OPT) OPT.stop = true;
       const t0 = performance.now();
-      CTX = prepare(m.start, m.ring, m.penalty ?? 0.5);
+      CTX = prepare(m.start, m.ring, m.style || { repeat: m.penalty ?? 0.5, turn: 0, uturn: 0 });
       const r = attempt(CTX, null);
       CTX.best = r;
       self.postMessage({ result: pack(CTX, r, performance.now() - t0, 1), final: true });
@@ -87,23 +89,27 @@ class Heap {
 
 /** Reusable Dijkstra over a CSR adjacency; arrays are stamped so each run is O(visited). */
 class Searcher {
-  constructor(adj, n) {
-    this.adj = adj; this.n = n;
+  /** turnCost(x, inEdge, outEdge) adds a cost for the turn at x (null = none) */
+  constructor(adj, n, turnCost = null) {
+    this.adj = adj; this.n = n; this.turnCost = turnCost; this.ban = -1;
     this.dist = new Float64Array(n); this.prevE = new Int32Array(n); this.prevN = new Int32Array(n);
     this.stamp = new Int32Array(n); this.cur = 0; this.heap = new Heap();
   }
   d(x) { return this.stamp[x] === this.cur ? this.dist[x] : Infinity; }
-  /** onSettle(x, d) returns true to stop. */
-  run(sources, onSettle) {
-    const { adj, dist, prevE, prevN, stamp, heap } = this; const cur = ++this.cur;
+  /** onSettle(x, d) returns true to stop. inEdge: the edge the (single) source was reached by. */
+  run(sources, onSettle, inEdge = -1) {
+    const { adj, dist, prevE, prevN, stamp, heap, turnCost, ban } = this; const cur = ++this.cur;
     heap.clear();
-    for (const s of sources) { stamp[s] = cur; dist[s] = 0; prevE[s] = -1; prevN[s] = -1; heap.push(0, s); }
+    for (const s of sources) { stamp[s] = cur; dist[s] = 0; prevE[s] = inEdge; prevN[s] = -1; heap.push(0, s); }
     while (heap.size) {
       const dx = heap.topKey(), x = heap.pop();
       if (dx > dist[x]) continue;
       if (onSettle && onSettle(x, dx)) return x;
       for (let p = adj.start[x]; p < adj.start[x + 1]; p++) {
-        const y = adj.to[p], nd = dx + adj.w[p];
+        const e = adj.eid[p]; if (e === ban) continue;
+        const y = adj.to[p];
+        let nd = dx + adj.w[p];
+        if (turnCost && prevE[x] >= 0) nd += turnCost(x, prevE[x], e);
         if (stamp[y] !== cur || nd < dist[y]) { stamp[y] = cur; dist[y] = nd; prevE[y] = adj.eid[p]; prevN[y] = x; heap.push(nd, y); }
       }
     }
@@ -118,7 +124,8 @@ class Searcher {
 }
 
 // ---------- preparation (once per solve) ----------
-function prepare(startLonLat, ring, penalty) {
+function prepare(startLonLat, ring, style) {
+  const penalty = style.repeat || 0;
   if (!NET) throw new Error("The road network isn't loaded yet.");
   say("Preparing roads...");
   const xs = ring.map(p => p[0]), ys = ring.map(p => p[1]);
@@ -154,7 +161,33 @@ function prepare(startLonLat, ring, penalty) {
     return { start, to, eid, w };
   }
   const UA = buildAdj("u"), DA = buildAdj("d"), RA = buildAdj("r");
-  const SU = new Searcher(UA, n), SD = new Searcher(DA, n), SR = new Searcher(RA, n);
+
+  // heading leaving each end of every edge (taken ~15 m in, so a kink at the corner doesn't count)
+  const cosL = Math.cos(startLonLat[1] * Math.PI / 180);
+  const heading = (c, from, dir) => {
+    const [x0, y0] = c[from]; let k = from;
+    for (;;) {
+      const nk = k + dir; if (nk < 0 || nk >= c.length) break; k = nk;
+      const dx = (c[k][0] - x0) * cosL, dy = c[k][1] - y0;
+      if ((dx * dx + dy * dy) * 1.2e10 > 225) break; // ~15 m
+    }
+    return Math.atan2(c[k][1] - y0, (c[k][0] - x0) * cosL);
+  };
+  const leaveU = new Float64Array(edges.length), leaveV = new Float64Array(edges.length);
+  edges.forEach((ed, i) => { leaveU[i] = heading(ed.coords, 0, 1); leaveV[i] = heading(ed.coords, ed.coords.length - 1, -1); });
+  /** angle (0..PI) between arriving at x on edge a and leaving x on edge b; PI = U-turn */
+  const turnAngle = (x, a, b) => {
+    if (a === b) return Math.PI;
+    const arrive = (x === edges[a].v ? leaveV[a] : leaveU[a]) + Math.PI;   // heading while arriving
+    const leave = x === edges[b].u ? leaveU[b] : leaveV[b];
+    let d = Math.abs(leave - arrive) % (2 * Math.PI); if (d > Math.PI) d = 2 * Math.PI - d;
+    return d;
+  };
+  const TURN = 35 * Math.PI / 180, UTURN = 150 * Math.PI / 180;
+  const turnCost = (x, a, b) => { const t = turnAngle(x, a, b); return t > UTURN ? style.uturn : t > TURN ? style.turn : 0; };
+  const tc = style.turn || style.uturn ? turnCost : null;
+  const SU = new Searcher(UA, n, tc), SD = new Searcher(DA, n, tc), SR = new Searcher(RA, n);
+  const SX = new Searcher(DA, n, tc); // U-turn cleanup searches
 
   // snap start: nearest node with a legal way out
   let start = -1, best = Infinity;
@@ -229,7 +262,8 @@ function prepare(startLonLat, ring, penalty) {
     dCand.set(s, list);
   }
 
-  return { n, edges, lonlat, allowed, UA, DA, SU, SD, start, req, base, odd, uCand, uDist, M, dCand, penalty,
+  return { n, edges, lonlat, allowed, UA, DA, SU, SD, SX, start, req, base, odd, uCand, uDist, M, dCand, penalty,
+           style, turnAngle, TURN, UTURN,
            dropped, newAvail, pathU: new Map(), pathD: new Map() };
 }
 
@@ -319,7 +353,7 @@ function attempt(C, rng) {
   balance(C, arcs, false);
   joinDirected(C, arcs);
 
-  // 4. directed Euler circuit from the start, preferring not to double straight back
+  // 4. directed Euler circuit from the start, preferring to go straight through each intersection
   const out = Array.from({ length: n }, () => []);
   arcs.forEach(([a], k) => out[a].push(k));
   if (rng) for (const l of out) for (let i = l.length - 1; i > 0; i--) { const j = Math.floor(rand() * (i + 1)); [l[i], l[j]] = [l[j], l[i]]; }
@@ -328,11 +362,14 @@ function attempt(C, rng) {
     const [x, inK] = stack[stack.length - 1];
     const l = out[x];
     if (l.length) {
-      // pick an outgoing arc that isn't the same street we came in on, if there is one
+      // take the exit closest to straight ahead (a U-turn is the last resort)
       let pick = l.length - 1;
       if (inK >= 0) {
-        const inE = arcs[inK][2];
-        for (let i = l.length - 1; i >= 0; i--) if (arcs[l[i]][2] !== inE) { pick = i; break; }
+        const inE = arcs[inK][2]; let best = Infinity;
+        for (let i = l.length - 1; i >= 0; i--) {
+          const a = C.turnAngle(x, inE, arcs[l[i]][2]) + (rng ? rand() * 0.35 : 0);
+          if (a < best) { best = a; pick = i; }
+        }
       }
       const k = l[pick]; l[pick] = l[l.length - 1]; l.pop();
       stack.push([arcs[k][1], k]);
@@ -342,16 +379,60 @@ function attempt(C, rng) {
   const steps = seq.filter(k => k >= 0);
   if (steps.length !== arcs.length) throw new Error("Couldn't join every road into one loop. Try a smaller area.");
 
-  // 5. score
-  const count = new Map(); let total = 0, uturns = 0;
-  for (let i = 0; i < steps.length; i++) {
-    const [, , e] = arcs[steps[i]];
+  let walk = steps.map(k => arcs[k]);
+  if (C.style.uturn > 0) walk = cleanupUturns(C, walk);
+  return score(C, walk);
+}
+
+/** Replace U-turns at intersections that have another way out with a loop back,
+ *  when the loop costs less than the style's U-turn allowance. */
+function cleanupUturns(C, walk) {
+  const { edges, DA, SX, style } = C;
+  for (let pass = 0; pass < 2; pass++) {
+    const out = [];
+    let changed = false;
+    for (let i = 0; i < walk.length; i++) {
+      const cur = walk[i], nxt = walk[i + 1];
+      out.push(cur);
+      if (!nxt) continue;
+      const [a, b, e] = cur;
+      if (nxt[2] !== e || nxt[1] !== a) continue;          // not a U-turn at b
+      let exit = false;
+      for (let p = DA.start[b]; p < DA.start[b + 1]; p++) if (DA.eid[p] !== e) { exit = true; break; }
+      if (!exit) continue;                                  // true dead end: nothing to do
+      const limit = edges[e].len + style.uturn + 6 * (style.turn || 0);
+      SX.ban = e;
+      const hit = SX.run([b], (x, d) => x === a || d > limit, e);
+      SX.ban = -1;
+      if (hit !== a) continue;
+      const loop = SX.path(a);
+      const extra = loop.reduce((s, st) => s + edges[st[2]].len, 0) - edges[e].len;
+      if (extra > style.uturn) continue;
+      for (const st of loop) out.push(st);
+      i++; changed = true;                                  // the ride back is replaced by the loop
+    }
+    walk = out;
+    if (!changed) break;
+  }
+  return walk;
+}
+
+/** Distance, repeats, turns and U-turns of a walk, and its cost under the style. */
+function score(C, walk) {
+  const { edges, style, turnAngle, TURN, UTURN } = C;
+  const count = new Map(); let total = 0, uturns = 0, turns = 0;
+  for (let i = 0; i < walk.length; i++) {
+    const [, b, e] = walk[i];
     total += edges[e].len; count.set(e, (count.get(e) || 0) + 1);
-    if (i && arcs[steps[i - 1]][2] === e) uturns++;
+    if (i < walk.length - 1) {
+      const t = turnAngle(b, e, walk[i + 1][2]);
+      if (t > UTURN) uturns++; else if (t > TURN) turns++;
+    }
   }
   let repeat = 0, newM = 0;
   for (const [e, c] of count) { repeat += (c - 1) * edges[e].len; newM += edges[e].newM; }
-  return { arcs, steps, total, repeat, newM, uturns, cost: total + C.penalty * repeat };
+  const cost = total + (style.repeat || 0) * repeat + (style.turn || 0) * turns + (style.uturn || 0) * uturns;
+  return { walk, total, repeat, newM, uturns, turns, cost };
 }
 
 /** Make in-degree equal out-degree at every node by adding the cheapest legal paths
@@ -456,14 +537,14 @@ function joinDirected(C, arcs) {
 function pack(C, r, ms, tries) {
   const { edges, lonlat, start } = C;
   const coords = [];
-  for (const k of r.steps) {
-    const [a, , e] = r.arcs[k], ed = edges[e];
+  for (const [a, , e] of r.walk) {
+    const ed = edges[e];
     const seg = a === ed.u ? ed.coords : ed.coords.slice().reverse();
     for (let i = coords.length ? 1 : 0; i < seg.length; i++) coords.push(seg[i]);
   }
   let wrongWay = 0;
-  for (const k of r.steps) { const [a, , e] = r.arcs[k]; if (!C.allowed(edges[e], a)) wrongWay++; }
-  return { coords, totalM: r.total, newM: r.newM, repeatM: r.repeat, uturns: r.uturns, newAvailM: C.newAvail,
+  for (const [a, , e] of r.walk) if (!C.allowed(edges[e], a)) wrongWay++;
+  return { coords, totalM: r.total, newM: r.newM, repeatM: r.repeat, uturns: r.uturns, turns: r.turns, newAvailM: C.newAvail,
            wrongWay, dropped: C.dropped, startLonLat: lonlat[start], ms: Math.round(ms), tries };
 }
 

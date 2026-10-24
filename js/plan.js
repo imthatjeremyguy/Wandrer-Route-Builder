@@ -186,7 +186,12 @@
   }
 
   // ---------- solve + optimize ----------
-  const PENALTY = { off: 0, some: 0.5, strong: 1.5 };
+  // Smooth riding: how much distance a smoother ride is worth (see solver.worker.js and help.html#smooth)
+  const STYLES = {
+    off:    { repeat: 0,   turn: 0,  uturn: 0 },    // shortest distance
+    some:   { repeat: 0,   turn: 30, uturn: 400 },  // loop instead of a U-turn if it adds < 400 m
+    strong: { repeat: 0.2, turn: 60, uturn: 900 },  // loop instead of a U-turn if it adds < 900 m
+  };
   let optimizing = false, firstTotal = null;
 
   function onWorker(e) {
@@ -221,7 +226,7 @@
     setBusy(true);
     say("Building route...");
     worker.onmessage = onWorker;
-    worker.postMessage({ type: "solve", start, ring: area, penalty: PENALTY[$("repeat-penalty").value] ?? 0.5 });
+    worker.postMessage({ type: "solve", start, ring: area, style: STYLES[$("repeat-penalty").value] || STYLES.some });
   }
 
   function optimize() {
@@ -246,6 +251,8 @@
     $("route-new").textContent = `${fmtMi(r.newM)} mi`;
     $("route-eff").textContent = `${Math.round(100 * r.newM / r.totalM)}%`;
     $("route-repeat").textContent = `${fmtMi(r.repeatM)} mi`;
+    $("route-uturns").textContent = r.uturns ?? "-";
+    $("route-turns").textContent = r.turns ?? "-";
     $("route-time").textContent = `${(r.ms / 1000).toFixed(1)} s`;
     stopPlay();
     if (!keepView) $("route-result").scrollIntoView({ block: "nearest", behavior: matchMedia("(prefers-reduced-motion: reduce)").matches ? "auto" : "smooth" });
@@ -358,7 +365,7 @@
       $("play-pos").addEventListener("input", seek);
       $("download-gpx").addEventListener("click", gpx);
       $("optimize-route").addEventListener("click", optimize);
-      Store.get("penalty").then(v => { if (v && PENALTY[v] !== undefined) $("repeat-penalty").value = v; });
+      Store.get("penalty").then(v => { if (v && STYLES[v]) $("repeat-penalty").value = v; });
       $("repeat-penalty").addEventListener("change", e => { Store.set("penalty", e.target.value); clearRoute(); say(""); });
       document.addEventListener("keydown", e => { if (e.key === "Escape" && mode) { cancelMode(); say(""); } });
       Store.get("start").then(s => { if (s) setStart(L.latLng(s[1], s[0]), false); });
