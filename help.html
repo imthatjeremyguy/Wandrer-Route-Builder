@@ -149,7 +149,7 @@
         </ul>
         <h3>How it chooses</h3>
         <ul>
-          <li>New roads are grouped into chunks of a few blocks. The solver tries different mixes (nearby chunks, dense chunks a little farther out, swaps between them) for up to about 8 seconds, and keeps the best loop it finds.</li>
+          <li>New roads are grouped into chunks of a few blocks. The solver first looks for compact areas: good "home bases" with lots of new road around them, each grown outward block by block, so the ride works through one area instead of hopping between distant clusters. It then tries other mixes and swaps for up to about 12 seconds, and keeps the best loop it finds.</li>
           <li>Your Smooth riding setting applies throughout, so a smoother setting can mean a little less new road for the same distance.</li>
           <li>Roads left out show as <strong>faded red</strong>, and the note under the route sums up what it collected.</li>
           <li>If a new miles target can't be reached (not enough new road nearby, or not within your Max ride), the note says so and you get the closest it could do.</li>

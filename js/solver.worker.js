@@ -302,7 +302,7 @@ function withRoads(G, req) {
 
 // ---------- distance budget: collect the most new road within a ride distance ----------
 const CHUNK_DEG = 0.004;     // ~400 m grid: new roads are chosen in chunks of a few blocks
-const BUDGET_SECS = 8;       // time allowed to search for the best mix
+const BUDGET_SECS = 12;      // time allowed to search for the best mix
 
 /** Group new roads into chunks: same connected cluster of new road and same ~400 m cell. */
 function chunkify(G) {
@@ -314,19 +314,53 @@ function chunkify(G) {
   for (const i of reqReach) {
     const ed = edges[i], [x, y] = ed.coords[ed.coords.length >> 1];
     const key = find(ed.u) + ":" + Math.floor(x / CHUNK_DEG) + ":" + Math.floor(y / CHUNK_DEG);
-    if (!byKey.has(key)) byKey.set(key, { edges: [], newM: 0, len: 0, rt: Infinity, nodes: new Set() });
+    if (!byKey.has(key)) byKey.set(key, { edges: [], newM: 0, len: 0, rt: Infinity, nodes: new Set(), sx: 0, sy: 0 });
     const c = byKey.get(key);
     c.edges.push(i); c.newM += ed.newM; c.len += ed.len; c.rt = Math.min(c.rt, rt.get(i));
     c.nodes.add(ed.u); c.nodes.add(ed.v);
+    c.sx += x * ed.newM; c.sy += y * ed.newM;
   }
-  return [...byKey.values()];
+  const out = [...byKey.values()];
+  const MPD = 111195.08;
+  for (const c of out) {   // new-road-weighted centre, in metres
+    const lon = c.sx / c.newM, lat = c.sy / c.newM;
+    c.cx = lon * MPD * Math.cos(lat * Math.PI / 180); c.cy = lat * MPD;
+  }
+  return out;
+}
+
+/** Candidate "home bases" for a compact ride: chunks with plenty of new road close around
+ *  them, weighed against how far they are from the start. Each comes with the order to grow
+ *  a region from it (nearest chunks first). Seeds are kept apart so they cover different areas. */
+function pickSeeds(chunks, wantNewM, maxSeeds) {
+  const n = chunks.length, scored = [];
+  for (let i = 0; i < n; i++) {
+    const ci = chunks[i];
+    const order = chunks.map((c, j) => [Math.hypot(c.cx - ci.cx, c.cy - ci.cy), j]).sort((a, b) => a[0] - b[0]);
+    let acc = 0, reach = Infinity;
+    for (const [d, j] of order) { acc += chunks[j].newM; if (acc >= wantNewM) { reach = d; break; } }
+    if (reach === Infinity) reach = order.at(-1)[0] * 1.5 + 1;
+    scored.push({ i, est: ci.rt + 2.2 * reach, order: order.map(o => o[1]) });
+  }
+  scored.sort((a, b) => a.est - b.est);
+  const seeds = [];
+  for (const s of scored) {
+    const c = chunks[s.i];
+    if (seeds.some(t => Math.hypot(chunks[t.i].cx - c.cx, chunks[t.i].cy - c.cy) < 1200)) continue;
+    seeds.push(s);
+    if (seeds.length >= maxSeeds) break;
+  }
+  return seeds;
 }
 
 function solveBudget(G, budgetM) {
   const mi = m => (m / 1609.344).toFixed(1);
   const t0 = performance.now(), deadline = t0 + BUDGET_SECS * 1000;
-  const all = withRoads(G, G.reqReach), rAll = attempt(all, null);
-  if (rAll.total <= budgetM) return { C: all, r: rAll };
+  // collecting everything only makes sense if the pool could possibly fit (a loop is at least as long as its new road)
+  if (G.areaNewM < budgetM) {
+    const all = withRoads(G, G.reqReach), rAll = attempt(all, null);
+    if (rAll.total <= budgetM) return { C: all, r: rAll };
+  }
 
   const chunks = chunkify(G);
   const evals = new Map();     // chunk-set key -> {C, r} (null when over budget)
@@ -375,6 +409,17 @@ function solveBudget(G, budgetM) {
     return cur;
   }
 
+  // seed 0: compact regions grown around good home bases (largest prefix of each that fits)
+  for (const sd of pickSeeds(chunks, budgetM * 0.45, 6)) {
+    if (!timeLeft()) break;
+    if (!evaluate(new Set(sd.order.slice(0, 1)))) continue;
+    let lo = 1, hi = sd.order.length + 1;
+    while (hi - lo > 1 && timeLeft()) {
+      const mid = (lo + hi) >> 1;
+      if (evaluate(new Set(sd.order.slice(0, mid)))) lo = mid; else hi = mid;
+    }
+  }
+
   // seed 1: nearest chunks first (largest prefix that fits, by binary search)
   const byRt = chunks.map((_, i) => i).sort((a, b) => chunks[a].rt - chunks[b].rt);
   const first = evaluate(new Set(byRt.slice(0, 1)));
@@ -384,12 +429,13 @@ function solveBudget(G, budgetM) {
   }
   // largest k in [1, n] whose first k chunks fit
   let seed1 = first, lo = 1, hi = byRt.length + 1;
-  while (hi - lo > 1) {
+  while (hi - lo > 1 && (timeLeft() || !best)) {
     const mid = (lo + hi) >> 1;
     const res = evaluate(new Set(byRt.slice(0, mid)));
     if (res) { seed1 = res; lo = mid; } else hi = mid;
   }
-  let cur = grow(seed1);
+  if (timeLeft()) grow(seed1);
+  if (best && timeLeft()) grow(best);   // fill any room left in the best region
 
   // seed 2: densest value near the start (new miles per round trip), then grow
   if (timeLeft()) {
@@ -473,7 +519,12 @@ function solveTarget(G, targetM, capM) {
   }
   const byRt = chunks.map((_, i) => i).sort((a, b) => chunks[a].rt - chunks[b].rt);
   const byRatio = chunks.map((_, i) => i).sort((a, b) => ratio(b) - ratio(a));
-  seed(byRt);
+  // compact regions grown around good home bases come first; the scattered seeds are fallbacks
+  for (const sd of pickSeeds(chunks, targetM, 8)) {
+    if (!timeLeft()) break;
+    seed(sd.order);
+  }
+  if (timeLeft()) seed(byRt);
   if (timeLeft()) seed(byRatio);
 
   // improve: drop chunks that aren't needed, or swap a weak one for a better-placed one
