@@ -10,8 +10,8 @@
   <link href="https://fonts.googleapis.com/css2?family=Overpass:wght@400;600;800&display=swap" rel="stylesheet">
   <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.css">
   <!-- bump APP_VERSION and the ?v= tags on every release so browsers fetch fresh files -->
-  <script>window.APP_VERSION = "17";</script>
-  <link rel="stylesheet" href="css/style.css?v=17">
+  <script>window.APP_VERSION = "19";</script>
+  <link rel="stylesheet" href="css/style.css?v=19">
 </head>
 <body>
   <main class="layout">
@@ -94,6 +94,14 @@
             <option value="strong">Strong: loops over U-turns</option>
           </select>
         </label>
+        <label class="field" for="budget">
+          <span class="plan-k">Max distance
+            <a class="what" href="help.html#budget" target="_blank" rel="noopener" aria-label="How does max distance work?">?</a></span>
+        </label>
+        <div class="budget-row">
+          <input type="number" id="budget" min="1" step="1" inputmode="decimal" placeholder="No limit">
+          <span>mi</span>
+        </div>
         <button class="btn" id="build-route" type="button" disabled>Build route</button>
 
         <div id="route-result" hidden>
@@ -145,11 +153,11 @@
 
   <script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.js"></script>
   <script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
-  <script src="js/store.js?v=17"></script>
-  <script src="js/kmz.js?v=17"></script>
-  <script src="js/osm.js?v=17"></script>
-  <script src="js/gpx.js?v=17"></script>
-  <script src="js/plan.js?v=17"></script>
-  <script src="js/app.js?v=17"></script>
+  <script src="js/store.js?v=19"></script>
+  <script src="js/kmz.js?v=19"></script>
+  <script src="js/osm.js?v=19"></script>
+  <script src="js/gpx.js?v=19"></script>
+  <script src="js/plan.js?v=19"></script>
+  <script src="js/app.js?v=19"></script>
 </body>
 </html>

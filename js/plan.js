@@ -226,7 +226,9 @@
     setBusy(true);
     say("Building route...");
     worker.onmessage = onWorker;
-    worker.postMessage({ type: "solve", start, ring: area, style: STYLES[$("repeat-penalty").value] || STYLES.some });
+    const budgetMi = parseFloat($("budget").value);
+    worker.postMessage({ type: "solve", start, ring: area, style: STYLES[$("repeat-penalty").value] || STYLES.some,
+                         budgetM: budgetMi > 0 ? budgetMi * 1609.344 : 0 });
   }
 
   function optimize() {
@@ -240,9 +242,16 @@
     worker.postMessage({ type: "optimize", seconds: Number($("optimize-secs").value) || 20 });
   }
 
+  let skippedLayer = null;
   function showRoute(r, keepView) {
     if (!route) firstTotal = r.totalM;
     route = r;
+    if (skippedLayer) { map.removeLayer(skippedLayer); skippedLayer = null; }
+    if (r.skipped && r.skipped.length) {
+      // fade the red roads the budget left out
+      skippedLayer = L.layerGroup(r.skipped.map(c => L.polyline(c.map(([x, y]) => [y, x]),
+        { color: "#ffffff", weight: 6, opacity: 0.6, interactive: false }))).addTo(map);
+    }
     if (routeLine) routeLine.setLatLngs(r.coords.map(([x, y]) => [y, x]));
     else routeLine = L.polyline(r.coords.map(([x, y]) => [y, x]), { color: ROUTE, weight: 3.5, opacity: 0.9 }).addTo(map);
     if (!keepView) map.fitBounds(routeLine.getBounds(), { padding: [24, 24] });
@@ -257,6 +266,8 @@
     stopPlay();
     if (!keepView) $("route-result").scrollIntoView({ block: "nearest", behavior: matchMedia("(prefers-reduced-motion: reduce)").matches ? "auto" : "smooth" });
     const notes = [];
+    if (r.budgetM) notes.push(`Fits your ${fmtMi(r.budgetM)} mi limit: ${fmtMi(r.newM)} new mi collected, of ${fmtMi(r.areaNewM)} in the area.` +
+      (r.skipped && r.skipped.length ? " Faded red roads were left out." : ""));
     if (r.dropped) notes.push(`${r.dropped} new road piece${r.dropped > 1 ? "s" : ""} can't be reached legally from this start and ${r.dropped > 1 ? "were" : "was"} skipped.`);
     if (r.wrongWay) notes.push(`Warning: ${r.wrongWay} wrong-way segment${r.wrongWay > 1 ? "s" : ""}.`);
     if (!optimizing) say(notes.join(" "));
@@ -267,6 +278,7 @@
     if (optimizing && worker) worker.postMessage({ type: "stop" });
     firstTotal = null;
     if (routeLine) { map.removeLayer(routeLine); routeLine = null; }
+    if (skippedLayer) { map.removeLayer(skippedLayer); skippedLayer = null; }
     route = null; $("route-result").hidden = true;
   }
 
@@ -367,6 +379,12 @@
       $("optimize-route").addEventListener("click", optimize);
       Store.get("penalty").then(v => { if (v && STYLES[v]) $("repeat-penalty").value = v; });
       $("repeat-penalty").addEventListener("change", e => { Store.set("penalty", e.target.value); clearRoute(); say(""); });
+      Store.get("budget").then(v => { if (v) $("budget").value = v; });
+      $("budget").addEventListener("change", e => {
+        const v = parseFloat(e.target.value);
+        if (!(v > 0)) e.target.value = "";
+        Store.set("budget", e.target.value); clearRoute(); say("");
+      });
       document.addEventListener("keydown", e => { if (e.key === "Escape" && mode) { cancelMode(); say(""); } });
       Store.get("start").then(s => { if (s) setStart(L.latLng(s[1], s[0]), false); });
       Store.get("area").then(a => {

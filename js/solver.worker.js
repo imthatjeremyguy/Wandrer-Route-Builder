@@ -31,8 +31,10 @@ self.onmessage = (e) => {
     else if (m.type === "solve") {
       if (OPT) OPT.stop = true;
       const t0 = performance.now();
-      CTX = prepare(m.start, m.ring, m.style || { repeat: m.penalty ?? 0.5, turn: 0, uturn: 0 });
-      const r = attempt(CTX, null);
+      const G = prepare(m.start, m.ring, m.style || { repeat: m.penalty ?? 0.5, turn: 0, uturn: 0 });
+      let r;
+      if (m.budgetM > 0) ({ C: CTX, r } = solveBudget(G, m.budgetM));
+      else { CTX = withRoads(G, G.reqReach); r = attempt(CTX, null); }
       CTX.best = r;
       self.postMessage({ result: pack(CTX, r, performance.now() - t0, 1), final: true });
     } else if (m.type === "optimize") optimize(m.seconds || 20);
@@ -206,6 +208,18 @@ function prepare(startLonLat, ring, style) {
   const req = reqAll.filter(i => [edges[i].u, edges[i].v].every(x => fwd[x] < Infinity && back[x] < Infinity));
   const dropped = reqAll.length - req.length;
   if (!req.length) throw new Error("The new roads in that area can't be reached from the start.");
+  // round-trip cost from the start to reach each new road (orders roads for a distance budget)
+  const rt = new Map(req.map(i => {
+    const ed = edges[i];
+    return [i, Math.min(fwd[ed.u] + back[ed.u], fwd[ed.v] + back[ed.v])];
+  }));
+  return { n, edges, lonlat, allowed, UA, DA, SU, SD, SX, start, penalty, style, turnAngle, TURN, UTURN,
+           dropped, reqReach: req, rt, areaNewM: req.reduce((s, i) => s + edges[i].newM, 0) };
+}
+
+/** Context for routing a particular set of new roads (all of them, or a budget's share). */
+function withRoads(G, req) {
+  const { n, edges, SU, SD, start } = G;
   const newAvail = req.reduce((s, i) => s + edges[i].newM, 0);
 
   // undirected joins (greedy Prim over clusters of new road, from the start's cluster)
@@ -262,9 +276,41 @@ function prepare(startLonLat, ring, style) {
     dCand.set(s, list);
   }
 
-  return { n, edges, lonlat, allowed, UA, DA, SU, SD, SX, start, req, base, odd, uCand, uDist, M, dCand, penalty,
-           style, turnAngle, TURN, UTURN,
-           dropped, newAvail, pathU: new Map(), pathD: new Map() };
+  return { ...G, req, base, odd, uCand, uDist, M, dCand, newAvail, pathU: new Map(), pathD: new Map() };
+}
+
+// ---------- distance budget ----------
+/** Collect the new roads nearest the start (by round-trip cost), taking as many as fit
+ *  in budgetM. Binary search on how many roads to include, solving each candidate. */
+function solveBudget(G, budgetM) {
+  const mi = m => (m / 1609.344).toFixed(1);
+  const all = withRoads(G, G.reqReach), rAll = attempt(all, null);
+  if (rAll.total <= budgetM) return { C: all, r: rAll };
+  const order = G.reqReach.slice().sort((a, b) => G.rt.get(a) - G.rt.get(b));
+  let lo = 0, hi = order.length, best = null;   // best = largest fitting prefix found
+  const tryK = (k) => {
+    const C = withRoads(G, order.slice(0, k)), r = attempt(C, null);
+    say(`Fitting to ${mi(budgetM)} mi: ${mi(C.newAvail)} new mi gives a ${mi(r.total)} mi loop...`);
+    return { C, r };
+  };
+  // the nearest road alone has to fit
+  const first = tryK(1);
+  if (first.r.total > budgetM) {
+    throw new Error(`Even the nearest new road needs a ${mi(first.r.total)} mi loop. Raise the max distance or move the start.`);
+  }
+  best = first; lo = 1;
+  while (hi - lo > 1) {
+    const mid = (lo + hi) >> 1;
+    const t = tryK(mid);
+    if (t.r.total <= budgetM) { lo = mid; best = t; } else hi = mid;
+  }
+  // roads whose round-trip cost ties the cut-off: add them one by one while they still fit
+  for (let k = lo + 1; k <= Math.min(order.length, lo + 6); k++) {
+    const t = tryK(k);
+    if (t.r.total <= budgetM) best = t; else break;
+  }
+  best.C.budgetM = budgetM;
+  return best;
 }
 
 // ---------- one attempt (deterministic when rng is null) ----------
@@ -544,7 +590,13 @@ function pack(C, r, ms, tries) {
   }
   let wrongWay = 0;
   for (const [a, , e] of r.walk) if (!C.allowed(edges[e], a)) wrongWay++;
+  let skipped = null;
+  if (C.budgetM) {
+    const inSet = new Set(C.req);
+    skipped = C.reqReach.filter(i => !inSet.has(i)).map(i => edges[i].coords);
+  }
   return { coords, totalM: r.total, newM: r.newM, repeatM: r.repeat, uturns: r.uturns, turns: r.turns, newAvailM: C.newAvail,
+           areaNewM: C.areaNewM, budgetM: C.budgetM || 0, skipped,
            wrongWay, dropped: C.dropped, startLonLat: lonlat[start], ms: Math.round(ms), tries };
 }
 
@@ -560,7 +612,7 @@ function optimize(seconds) {
     try {
       while (performance.now() < sliceEnd && performance.now() < opt.until && !opt.stop) {
         const r = attempt(CTX, mulberry32(opt.seed + opt.tries++));
-        if (r.cost < CTX.best.cost - 1) {
+        if (r.cost < CTX.best.cost - 1 && !(CTX.budgetM && r.total > CTX.budgetM)) { // never go over the max distance
           CTX.best = r;
           self.postMessage({ result: pack(CTX, r, performance.now() - opt.t0, opt.tries), final: false });
         }

@@ -130,6 +130,14 @@ select {
 }
 .field select { width: 100%; margin-top: 4px; }
 select:focus-visible { outline: 3px solid var(--paint); outline-offset: 2px; }
+label.field[for="budget"] { margin-bottom: 4px; }
+.budget-row { display: flex; align-items: center; gap: 8px; margin-bottom: 12px; color: var(--sign-ink-soft); }
+#budget {
+  font: inherit; width: 8em; color: var(--sign); background: var(--sign-ink); border: 2px solid var(--sign-ink);
+  border-radius: 6px; padding: 6px 8px 4px; font-variant-numeric: tabular-nums;
+}
+#budget::placeholder { color: #6b7d74; }
+#budget:focus-visible { outline: 3px solid var(--paint); outline-offset: 2px; }
 .opt-row { display: flex; align-items: center; gap: 10px; margin-bottom: 12px; }
 .opt-secs { display: flex; align-items: center; gap: 6px; color: var(--sign-ink-soft); font-size: 0.9rem; }
 #build-route { margin: 4px 0 16px; width: 100%; }

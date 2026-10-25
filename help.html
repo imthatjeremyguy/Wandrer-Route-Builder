@@ -8,7 +8,7 @@
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Overpass:wght@400;600;800&display=swap" rel="stylesheet">
-  <link rel="stylesheet" href="css/help.css?v=17">
+  <link rel="stylesheet" href="css/help.css?v=18">
 </head>
 <body>
   <header class="help-top">
@@ -26,6 +26,7 @@
         <li><a href="#colors">What the map shows</a></li>
         <li><a href="#area">Drawing and editing the area</a></li>
         <li><a href="#smooth">Smooth riding</a></li>
+        <li><a href="#budget">Max distance</a></li>
         <li><a href="#stats">Route stats</a></li>
         <li><a href="#optimize">Optimize</a></li>
         <li><a href="#player">Playing the route</a></li>
@@ -45,7 +46,8 @@
           <li><strong>Set your start.</strong> Click <em>Set start</em>, then click the map. Drag the S marker to fine tune it.</li>
           <li><strong>Draw an area.</strong> Click <em>Draw</em> and click corners around the roads you want to collect. See <a href="#area">drawing and editing</a>.</li>
           <li><strong>Pick a Smooth riding setting.</strong> <em>Some</em> is a good default. See <a href="#smooth">what the settings mean</a>.</li>
-          <li><strong>Build the route.</strong> The loop leaves your start, rides every new road in the area, and comes back.</li>
+          <li><strong>Set a max distance (optional).</strong> Leave it empty to collect everything in the area. See <a href="#budget">max distance</a>.</li>
+          <li><strong>Build the route.</strong> The loop leaves your start, rides the new roads in the area, and comes back.</li>
           <li><strong>Optimize (optional).</strong> Lets the solver spend 10 to 60 seconds looking for a better loop.</li>
           <li><strong>Download GPX</strong> and import it into Strava, RideWithGPS or Garmin Connect.</li>
         </ol>
@@ -126,6 +128,18 @@
         </ul>
       </section>
 
+      <section id="budget">
+        <h2>Max distance</h2>
+        <p>Leave <em>Max distance</em> empty and the route collects every new road in the area. Enter a number of miles and the route stays within it.</p>
+        <ul>
+          <li>New roads closest to your start, by riding distance, are taken first. The solver widens that reach until the loop fills your limit, so you get the most complete chunk of the area that fits.</li>
+          <li>The route uses your Smooth riding setting while it fits, so a smoother setting covers a little less new road for the same distance.</li>
+          <li>Roads left out show as <strong>faded red</strong> on the map, and the note under the route says how much of the area's new road it collected.</li>
+          <li>To aim at a particular part of the area, move the start there or redraw the area around it.</li>
+          <li><em>Optimize</em> can shorten a budget route but won't add more roads to it yet.</li>
+        </ul>
+      </section>
+
       <section id="stats">
         <h2>Route stats</h2>
         <dl class="defs">
@@ -182,7 +196,8 @@
           <li>One-way streets are always ridden in the legal direction.</li>
           <li>Stretches with less than 15 m of new road are ignored. They aren't worth a detour.</li>
           <li>Near the state line, roads on the other side can't be used as connectors yet.</li>
-          <li>Routes are loops from your start. Point-to-point and a distance limit are coming.</li>
+          <li>Routes are loops from your start. Point-to-point routes are coming.</li>
+          <li>Max distance needs an area drawn. It picks roads nearest the start first, which isn't always the very best mix.</li>
         </ul>
       </section>
     </main>
