@@ -132,7 +132,7 @@
         <h2>Max distance</h2>
         <p>Leave <em>Max distance</em> empty and the route collects every new road in the area. Enter a number of miles and the route stays within it.</p>
         <ul>
-          <li>New roads closest to your start, by riding distance, are taken first. The solver widens that reach until the loop fills your limit, so you get the most complete chunk of the area that fits.</li>
+          <li>The solver looks for the loop that collects the <strong>most new road</strong> within your limit. It groups the area's new roads into chunks of a few blocks, then tries different mixes: nearby chunks, dense chunks a little farther out, and swaps between them. That search takes a few seconds and keeps the best loop it finds.</li>
           <li>The route uses your Smooth riding setting while it fits, so a smoother setting covers a little less new road for the same distance.</li>
           <li>Roads left out show as <strong>faded red</strong> on the map, and the note under the route says how much of the area's new road it collected.</li>
           <li>To aim at a particular part of the area, move the start there or redraw the area around it.</li>
@@ -197,7 +197,7 @@
           <li>Stretches with less than 15 m of new road are ignored. They aren't worth a detour.</li>
           <li>Near the state line, roads on the other side can't be used as connectors yet.</li>
           <li>Routes are loops from your start. Point-to-point routes are coming.</li>
-          <li>Max distance needs an area drawn. It picks roads nearest the start first, which isn't always the very best mix.</li>
+          <li>Max distance needs an area drawn. Its search is a strong heuristic, not a guarantee of the single best possible loop.</li>
         </ul>
       </section>
     </main>

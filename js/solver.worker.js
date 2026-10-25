@@ -279,38 +279,126 @@ function withRoads(G, req) {
   return { ...G, req, base, odd, uCand, uDist, M, dCand, newAvail, pathU: new Map(), pathD: new Map() };
 }
 
-// ---------- distance budget ----------
-/** Collect the new roads nearest the start (by round-trip cost), taking as many as fit
- *  in budgetM. Binary search on how many roads to include, solving each candidate. */
+// ---------- distance budget: collect the most new road within a ride distance ----------
+const CHUNK_DEG = 0.004;     // ~400 m grid: new roads are chosen in chunks of a few blocks
+const BUDGET_SECS = 8;       // time allowed to search for the best mix
+
+/** Group new roads into chunks: same connected cluster of new road and same ~400 m cell. */
+function chunkify(G) {
+  const { edges, reqReach, rt, n } = G;
+  const parent = Int32Array.from({ length: n }, (_, i) => i);
+  const find = x => { while (parent[x] !== x) x = parent[x] = parent[parent[x]]; return x; };
+  for (const i of reqReach) parent[find(edges[i].u)] = find(edges[i].v);
+  const byKey = new Map();
+  for (const i of reqReach) {
+    const ed = edges[i], [x, y] = ed.coords[ed.coords.length >> 1];
+    const key = find(ed.u) + ":" + Math.floor(x / CHUNK_DEG) + ":" + Math.floor(y / CHUNK_DEG);
+    if (!byKey.has(key)) byKey.set(key, { edges: [], newM: 0, len: 0, rt: Infinity, nodes: new Set() });
+    const c = byKey.get(key);
+    c.edges.push(i); c.newM += ed.newM; c.len += ed.len; c.rt = Math.min(c.rt, rt.get(i));
+    c.nodes.add(ed.u); c.nodes.add(ed.v);
+  }
+  return [...byKey.values()];
+}
+
 function solveBudget(G, budgetM) {
   const mi = m => (m / 1609.344).toFixed(1);
+  const t0 = performance.now(), deadline = t0 + BUDGET_SECS * 1000;
   const all = withRoads(G, G.reqReach), rAll = attempt(all, null);
   if (rAll.total <= budgetM) return { C: all, r: rAll };
-  const order = G.reqReach.slice().sort((a, b) => G.rt.get(a) - G.rt.get(b));
-  let lo = 0, hi = order.length, best = null;   // best = largest fitting prefix found
-  const tryK = (k) => {
-    const C = withRoads(G, order.slice(0, k)), r = attempt(C, null);
-    say(`Fitting to ${mi(budgetM)} mi: ${mi(C.newAvail)} new mi gives a ${mi(r.total)} mi loop...`);
-    return { C, r };
-  };
-  // the nearest road alone has to fit
-  const first = tryK(1);
-  if (first.r.total > budgetM) {
-    throw new Error(`Even the nearest new road needs a ${mi(first.r.total)} mi loop. Raise the max distance or move the start.`);
+
+  const chunks = chunkify(G);
+  const evals = new Map();     // chunk-set key -> {C, r} (null when over budget)
+  let best = null, tries = 0;
+  const keyOf = set => [...set].sort((a, b) => a - b).join(",");
+  const better = (a, b) => !b || a.r.newM > b.r.newM + 1 || (Math.abs(a.r.newM - b.r.newM) <= 1 && a.r.total < b.r.total);
+  /** Route a set of chunks; remember it; returns the result or null if over budget. */
+  function evaluate(set) {
+    const k = keyOf(set);
+    if (evals.has(k)) return evals.get(k);
+    const req = []; for (const ci of set) req.push(...chunks[ci].edges);
+    const C = withRoads(G, req), r = attempt(C, null);
+    tries++;
+    const res = r.total <= budgetM ? { C, r, set: new Set(set) } : null;
+    evals.set(k, res);
+    if (res && better(res, best)) best = res;
+    say(`Finding the best ${mi(budgetM)} mi loop: ${best ? mi(best.r.newM) + " new mi so far" : "searching"} (${tries} tries)`);
+    return res;
   }
-  best = first; lo = 1;
+  const timeLeft = () => performance.now() < deadline;
+
+  /** Grow a set by adding the chunks with the best new-miles-per-detour, while they fit. */
+  function grow(cur) {
+    for (let guard = 0; guard < 200 && timeLeft(); guard++) {
+      // detour estimate: twice the distance from the current route to the chunk, plus its own length
+      const routeNodes = [...new Set(cur.r.walk.flatMap(([a, b]) => [a, b]))];
+      G.SU.run(routeNodes);
+      const cand = [];
+      chunks.forEach((c, ci) => {
+        if (cur.set.has(ci)) return;
+        let d = Infinity; for (const x of c.nodes) d = Math.min(d, G.SU.d(x));
+        if (d === Infinity) return;
+        const est = 2 * d + c.len;
+        if (cur.r.total + est * 0.6 > budgetM) return;   // clearly won't fit
+        cand.push([c.newM / est, ci]);
+      });
+      cand.sort((a, b) => b[0] - a[0]);
+      let added = false;
+      for (const [, ci] of cand.slice(0, 6)) {
+        if (!timeLeft()) break;
+        const res = evaluate(new Set([...cur.set, ci]));
+        if (res) { cur = res; added = true; break; }
+      }
+      if (!added) break;
+    }
+    return cur;
+  }
+
+  // seed 1: nearest chunks first (largest prefix that fits, by binary search)
+  const byRt = chunks.map((_, i) => i).sort((a, b) => chunks[a].rt - chunks[b].rt);
+  const first = evaluate(new Set(byRt.slice(0, 1)));
+  if (!first) {
+    const one = withRoads(G, chunks[byRt[0]].edges), r1 = attempt(one, null);
+    throw new Error(`Even the nearest new road needs a ${mi(r1.total)} mi loop. Raise the max distance or move the start.`);
+  }
+  // largest k in [1, n] whose first k chunks fit
+  let seed1 = first, lo = 1, hi = byRt.length + 1;
   while (hi - lo > 1) {
     const mid = (lo + hi) >> 1;
-    const t = tryK(mid);
-    if (t.r.total <= budgetM) { lo = mid; best = t; } else hi = mid;
+    const res = evaluate(new Set(byRt.slice(0, mid)));
+    if (res) { seed1 = res; lo = mid; } else hi = mid;
   }
-  // roads whose round-trip cost ties the cut-off: add them one by one while they still fit
-  for (let k = lo + 1; k <= Math.min(order.length, lo + 6); k++) {
-    const t = tryK(k);
-    if (t.r.total <= budgetM) best = t; else break;
+  let cur = grow(seed1);
+
+  // seed 2: densest value near the start (new miles per round trip), then grow
+  if (timeLeft()) {
+    const byRatio = chunks.map((c, i) => [c.newM / (c.rt + c.len), i]).sort((a, b) => b[0] - a[0]);
+    for (const [, ci] of byRatio.slice(0, 3)) {
+      const s2 = evaluate(new Set([ci]));
+      if (s2) { grow(s2); break; }
+    }
   }
+
+  // swaps: drop a weak chunk from the best set and regrow into what that frees up
+  for (let round = 0; round < 3 && timeLeft(); round++) {
+    const base = best;
+    const weak = [...base.set].map(ci => [chunks[ci].newM / (chunks[ci].rt + chunks[ci].len), ci])
+      .sort((a, b) => a[0] - b[0]).slice(0, 4);
+    let improved = false;
+    for (const [, ci] of weak) {
+      if (!timeLeft() || base.set.size < 2) break;
+      const set = new Set(base.set); set.delete(ci);
+      const res = evaluate(set);
+      if (!res) continue;
+      grow(res);
+      if (best !== base) { improved = true; break; }
+    }
+    if (!improved) break;
+  }
+
   best.C.budgetM = budgetM;
-  return best;
+  best.C.budgetTries = tries;
+  return { C: best.C, r: best.r };
 }
 
 // ---------- one attempt (deterministic when rng is null) ----------
