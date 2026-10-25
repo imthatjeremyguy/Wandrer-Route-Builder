@@ -45,7 +45,13 @@ self.onmessage = (e) => {
       CTX.goal = { ...goal, ...(CTX.goal || {}) };
       CTX.hasArea = !!m.ring;
       CTX.best = r;
-      self.postMessage({ result: pack(CTX, r, performance.now() - t0, 1), final: true });
+      // goals: keep searching quietly, longer when there's a lot of new road in play
+      // (about 12 s for a neighbourhood, up to 30 s for a whole county)
+      const poolMi = G.areaNewM / 1609.344;
+      const totalMs = Math.min(30, Math.max(12, 10 + poolMi / 50)) * 1000;
+      const leftMs = totalMs - (performance.now() - t0);
+      if (CTX.sel && leftMs > 1500) optimize(leftMs / 1000, { silent: true, t0 });
+      else self.postMessage({ result: pack(CTX, r, performance.now() - t0, 1), final: true });
     } else if (m.type === "optimize") optimize(m.seconds || 20);
     else if (m.type === "stop") { if (OPT) OPT.stop = true; }
   } catch (err) {
@@ -426,7 +432,8 @@ function solveBudget(G, budgetM) {
   }
 
   // seed 0: compact regions grown around good home bases (largest prefix of each that fits)
-  for (const sd of pickSeeds(chunks, budgetM * 0.45, 6)) {
+  const big = chunks.length > 300;   // county-sized pool: compact regions are what win
+  for (const sd of pickSeeds(chunks, budgetM * 0.45, big ? 12 : 8)) {
     if (!timeLeft()) break;
     if (!evaluate(new Set(sd.order.slice(0, 1)))) continue;
     let lo = 1, hi = sd.order.length + 1;
@@ -436,8 +443,10 @@ function solveBudget(G, budgetM) {
     }
   }
 
-  // seed 1: nearest chunks first (largest prefix that fits, by binary search)
+  // seed 1: nearest chunks first (largest prefix that fits, by binary search); for big pools
+  // only as a fallback when no region fit at all
   const byRt = chunks.map((_, i) => i).sort((a, b) => chunks[a].rt - chunks[b].rt);
+  if (!best || !big) {
   const first = evaluate(new Set(byRt.slice(0, 1)));
   if (!first) {
     const one = withRoads(G, chunks[byRt[0]].edges), r1 = attempt(one, null);
@@ -451,10 +460,11 @@ function solveBudget(G, budgetM) {
     if (res) { seed1 = res; lo = mid; } else hi = mid;
   }
   if (timeLeft()) grow(seed1);
+  }
   if (best && timeLeft()) grow(best);   // fill any room left in the best region
 
   // seed 2: densest value near the start (new miles per round trip), then grow
-  if (timeLeft()) {
+  if (!big && timeLeft()) {
     const byRatio = chunks.map((c, i) => [c.newM / (c.rt + c.len), i]).sort((a, b) => b[0] - a[0]);
     for (const [, ci] of byRatio.slice(0, 3)) {
       const s2 = evaluate(new Set([ci]));
@@ -581,12 +591,13 @@ function solveTarget(G, targetM, capM) {
   const byRt = chunks.map((_, i) => i).sort((a, b) => chunks[a].rt - chunks[b].rt);
   const byRatio = chunks.map((_, i) => i).sort((a, b) => ratio(b) - ratio(a));
   // compact regions grown around good home bases come first; the scattered seeds are fallbacks
-  for (const sd of pickSeeds(chunks, targetM, 8)) {
+  const big = chunks.length > 300;   // county-sized pool: compact regions are what win
+  for (const sd of pickSeeds(chunks, targetM, big ? 12 : 8)) {
     if (!timeLeft()) break;
     seed(sd.order);
   }
-  if (timeLeft()) seed(byRt);
-  if (timeLeft()) seed(byRatio);
+  if ((!best || !big) && timeLeft()) seed(byRt);
+  if ((!best || !big) && timeLeft()) seed(byRatio);
 
   // improve: drop chunks that aren't needed, or swap a weak one for a better-placed one
   for (let round = 0; round < 40 && timeLeft() && best; round++) {
@@ -970,7 +981,8 @@ function goalBetter(goal, a, b) {
   return a.cost < b.cost - 1;
 }
 
-function optimize(seconds) {
+/** opts.silent: part of the first pass (no intermediate routes, result reported as the build) */
+function optimize(seconds, opts = {}) {
   if (!CTX || !CTX.best) { self.postMessage({ error: "Build a route first." }); return; }
   if (OPT) OPT.stop = true;
   const sel = CTX.sel;
@@ -981,10 +993,10 @@ function optimize(seconds) {
     for (const k of ["goal", "hasArea", "budgetM", "sel"]) if (CTX[k] !== undefined && C[k] === undefined) C[k] = CTX[k];
   };
   const finish = () => {
-    const r = pack(CTX, CTX.best, performance.now() - opt.t0, opt.tries);
+    const r = pack(CTX, CTX.best, performance.now() - (opts.t0 ?? opt.t0), opt.tries);
     r.selTries = sel ? sel.tries() - opt.selTries0 : 0;
     r.routeTries = opt.tries;
-    self.postMessage({ result: r, final: true, optimized: true });
+    self.postMessage({ result: r, final: true, optimized: !opts.silent });
     OPT = null;
   };
   const tick = () => {
@@ -997,7 +1009,7 @@ function optimize(seconds) {
         const b = sel.getBest();
         if (b && b.C !== CTX && goalBetter(CTX.goal, b.r, CTX.best)) {
           carry(b.C); CTX = b.C; CTX.best = b.r;
-          self.postMessage({ result: pack(CTX, CTX.best, performance.now() - opt.t0, opt.tries), final: false });
+          if (!opts.silent) self.postMessage({ result: pack(CTX, CTX.best, performance.now() - opt.t0, opt.tries), final: false });
         }
       } else {
         // try better routes for the current selection
@@ -1008,7 +1020,7 @@ function optimize(seconds) {
                          !(g.type === "newmiles" && g.met && r.newM < g.newM - 1);   // keep the goal met
           if (r.cost < CTX.best.cost - 1 && within) {
             CTX.best = r;
-            self.postMessage({ result: pack(CTX, r, performance.now() - opt.t0, opt.tries), final: false });
+            if (!opts.silent) self.postMessage({ result: pack(CTX, r, performance.now() - opt.t0, opt.tries), final: false });
           }
         }
       }
@@ -1017,7 +1029,11 @@ function optimize(seconds) {
     const secsLeft = Math.max(0, Math.ceil((opt.until - performance.now()) / 1000));
     const diff = (startTotal - CTX.best.total) / 1609.344;
     const selN = sel ? sel.tries() - opt.selTries0 : 0;
-    say(`Optimizing: ${sel ? selN + " road selections, " : ""}${opt.tries} routes tried, ` +
+    if (opts.silent) {
+      const g = CTX.goal || {}, b = CTX.best;
+      say(`Searching for the best loop: ${selN} road selections, ${opt.tries} routes tried. Best so far: ` +
+          (g.type === "distance" ? `${(b.newM / 1609.344).toFixed(1)} new mi` : `${(b.total / 1609.344).toFixed(1)} mi loop`) + `, ${secsLeft} s left`);
+    } else say(`Optimizing: ${sel ? selN + " road selections, " : ""}${opt.tries} routes tried, ` +
         `${Math.abs(diff) > 0.05 ? (diff > 0 ? diff.toFixed(1) + " mi shorter" : "better mix found") : "no improvement yet"}, ${secsLeft} s left`);
     setTimeout(tick, 0);
   };
