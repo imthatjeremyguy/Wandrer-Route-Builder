@@ -212,7 +212,7 @@
     some:   { repeat: 0,   turn: 30, uturn: 400 },  // loop instead of a U-turn if it adds < 400 m
     strong: { repeat: 0.2, turn: 60, uturn: 900 },  // loop instead of a U-turn if it adds < 900 m
   };
-  let optimizing = false, firstTotal = null;
+  let optimizing = false, firstTotal = null, firstNew = null;
 
   function onWorker(e) {
     const d = e.data;
@@ -224,9 +224,15 @@
       if (d.final) {
         setBusy(false);
         if (d.optimized) {
-          const saved = (firstTotal - d.result.totalM) * M2MI;
-          say(`Optimized: ${d.result.tries} tries. ` + (saved > 0.05 ? `${saved.toFixed(1)} mi shorter than the first pass.` :
-            "The first pass was already the best found."));
+          const r = d.result;
+          const saved = (firstTotal - r.totalM) * M2MI, gained = (r.newM - firstNew) * M2MI;
+          const tried = (r.selTries ? `${r.selTries} road selections and ` : "") + `${r.routeTries ?? r.tries} routes`;
+          const parts = [];
+          if (gained > 0.05) parts.push(`${gained.toFixed(1)} more new mi`);
+          if (saved > 0.05) parts.push(`${saved.toFixed(1)} mi shorter`);
+          else if (saved < -0.05 && gained > 0.05) parts.push(`${(-saved).toFixed(1)} mi longer`);
+          say(`Optimized: tried ${tried}. ` + (parts.length ? parts.join(", ") + " than the first pass." :
+            r.selTries ? "No better selection of roads or route was found." : "No better route was found for these roads."));
         }
       }
     }
@@ -255,6 +261,7 @@
     if (!route) return;
     stopPlay();
     firstTotal = firstTotal ?? route.totalM;
+    firstNew = firstNew ?? route.newM;
     setBusy(true, true);
     say("Optimizing...");
     worker.onmessage = onWorker;
@@ -263,7 +270,7 @@
 
   let skippedLayer = null;
   function showRoute(r, keepView) {
-    if (!route) firstTotal = r.totalM;
+    if (!route) { firstTotal = r.totalM; firstNew = r.newM; }
     route = r;
     if (skippedLayer) { map.removeLayer(skippedLayer); skippedLayer = null; }
     if (r.skipped && r.skipped.length) {
@@ -302,7 +309,7 @@
   function clearRoute() {
     stopPlay();
     if (optimizing && worker) worker.postMessage({ type: "stop" });
-    firstTotal = null;
+    firstTotal = null; firstNew = null;
     if (routeLine) { map.removeLayer(routeLine); routeLine = null; }
     if (skippedLayer) { map.removeLayer(skippedLayer); skippedLayer = null; }
     route = null; $("route-result").hidden = true;

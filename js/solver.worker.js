@@ -355,7 +355,8 @@ function pickSeeds(chunks, wantNewM, maxSeeds) {
 
 function solveBudget(G, budgetM) {
   const mi = m => (m / 1609.344).toFixed(1);
-  const t0 = performance.now(), deadline = t0 + BUDGET_SECS * 1000;
+  const t0 = performance.now();
+  let deadline = t0 + BUDGET_SECS * 1000;
   // collecting everything only makes sense if the pool could possibly fit (a loop is at least as long as its new road)
   if (G.areaNewM < budgetM) {
     const all = withRoads(G, G.reqReach), rAll = attempt(all, null);
@@ -463,9 +464,49 @@ function solveBudget(G, budgetM) {
     if (!improved) break;
   }
 
+  /** More of the same search, for Optimize: many more home bases and region sizes, then
+   *  grow and swap rounds. Yields after each step so it can run in time slices. */
+  function* extra() {
+    for (const frac of [0.45, 0.3, 0.6]) {
+      for (const sd of pickSeeds(chunks, budgetM * frac, 30)) {
+        if (!evaluate(new Set(sd.order.slice(0, 1)))) { yield; continue; }
+        let lo = 1, hi = sd.order.length + 1;
+        while (hi - lo > 1) {
+          const mid = (lo + hi) >> 1;
+          if (evaluate(new Set(sd.order.slice(0, mid)))) lo = mid; else hi = mid;
+          yield;
+        }
+      }
+    }
+    for (let round = 0; round < 50; round++) {
+      const before = best;
+      grow(best); yield;
+      const weak = [...best.set].map(ci => [chunks[ci].newM / (chunks[ci].rt + chunks[ci].len), ci])
+        .sort((a, b) => a[0] - b[0]).slice(0, 8);
+      for (const [, ci] of weak) {
+        if (best.set.size < 2) break;
+        const set = new Set(best.set); set.delete(ci);
+        const res = evaluate(set); yield;
+        if (res) { grow(res); yield; }
+      }
+      if (best === before) break;
+    }
+  }
   best.C.budgetM = budgetM;
-  best.C.budgetTries = tries;
+  best.C.sel = makeSelector(extra(), () => best, () => tries, d => { deadline = d; });
   return { C: best.C, r: best.r };
+}
+
+/** Wraps a goal search so Optimize can resume it in time slices. */
+function makeSelector(gen, getBest, getTries, setDeadline) {
+  const sel = {
+    exhausted: false, getBest, tries: getTries,
+    step(until) {
+      setDeadline(until);
+      while (!sel.exhausted && performance.now() < until) if (gen.next().done) sel.exhausted = true;
+    },
+  };
+  return sel;
 }
 
 // ---------- new-miles target: the shortest loop that collects at least N new miles ----------
@@ -488,7 +529,8 @@ function radiusForNew(start, targetM, capM) {
 
 function solveTarget(G, targetM, capM) {
   const mi = m => (m / 1609.344).toFixed(1);
-  const deadline = performance.now() + BUDGET_SECS * 1000, timeLeft = () => performance.now() < deadline;
+  let deadline = performance.now() + BUDGET_SECS * 1000;
+  const timeLeft = () => performance.now() < deadline;
   const chunks = chunkify(G);
   const evals = new Map(); let best = null, closest = null, tries = 0;
   const keyOf = set => [...set].sort((a, b) => a - b).join(",");
@@ -557,7 +599,52 @@ function solveTarget(G, targetM, capM) {
     if (best === base) break;
   }
 
-  if (best) { best.C.goal = { met: true }; return { C: best.C, r: best.r }; }
+  /** More of the same search, for Optimize: more home bases at a few region sizes, then
+   *  drop and swap rounds. Yields after each step so it can run in time slices. */
+  function* extra() {
+    for (const mult of [1.0, 1.2, 0.85]) {
+      for (const sd of pickSeeds(chunks, targetM * mult, 30)) {
+        let acc = 0, k = 0;
+        while (k < sd.order.length && acc < targetM) acc += chunks[sd.order[k++]].newM;
+        for (let x = 0; x < 8; x++) {
+          const res = evaluate(new Set(sd.order.slice(0, k))); yield;
+          if (res.r.newM >= targetM - 1 || k >= sd.order.length) break;
+          k++;
+        }
+      }
+    }
+    for (let round = 0; round < 80 && best; round++) {
+      const base = best;
+      const weak = [...base.set].sort((a, b) => ratio(a) - ratio(b)).slice(0, 10);
+      for (const ci of weak) {
+        const set = new Set(base.set); set.delete(ci);
+        if (set.size) { evaluate(set); yield; }
+        if (best !== base) break;
+      }
+      if (best !== base) continue;
+      const routeNodes = [...new Set(base.r.walk.flatMap(([a, b]) => [a, b]))];
+      G.SU.run(routeNodes);
+      const cand = chunks.map((c, i) => {
+        if (base.set.has(i)) return null;
+        let d = Infinity; for (const x of c.nodes) d = Math.min(d, G.SU.d(x));
+        return d === Infinity ? null : [c.newM / (2 * d + c.len), i];
+      }).filter(Boolean).sort((a, b) => b[0] - a[0]).slice(0, 6);
+      for (const ci of weak.slice(0, 5)) {
+        for (const [, add] of cand) {
+          const set = new Set(base.set); set.delete(ci); set.add(add);
+          evaluate(set); yield;
+        }
+        if (best !== base) break;
+      }
+      if (best === base) break;
+    }
+  }
+
+  if (best) {
+    best.C.goal = { met: true };
+    best.C.sel = makeSelector(extra(), () => best, () => tries, d => { deadline = d; });
+    return { C: best.C, r: best.r };
+  }
   // couldn't reach the target (not enough new road nearby, or not within the max ride)
   if (capM) {
     const res = solveBudget(G, capM);
@@ -856,35 +943,63 @@ function pack(C, r, ms, tries) {
            wrongWay, dropped: C.dropped, startLonLat: lonlat[start], ms: Math.round(ms), tries };
 }
 
-// ---------- optimizer: randomized attempts within a time budget ----------
+// ---------- optimizer: better road selections (goals) and better routes ----------
+/** Is result a better than b for this goal? (selection-level comparison) */
+function goalBetter(goal, a, b) {
+  if (goal && goal.type === "distance") return a.newM > b.newM + 1 || (Math.abs(a.newM - b.newM) <= 1 && a.total < b.total - 1);
+  if (goal && goal.type === "newmiles" && goal.met) return a.total < b.total - 1;
+  return a.cost < b.cost - 1;
+}
+
 function optimize(seconds) {
   if (!CTX || !CTX.best) { self.postMessage({ error: "Build a route first." }); return; }
   if (OPT) OPT.stop = true;
-  const opt = OPT = { stop: false, until: performance.now() + seconds * 1000, tries: 0, t0: performance.now(), seed: (Math.random() * 2 ** 31) | 0 };
-  const startCost = CTX.best.cost;
+  const sel = CTX.sel;
+  const opt = OPT = { stop: false, until: performance.now() + seconds * 1000, tries: 0, t0: performance.now(),
+                      seed: (Math.random() * 2 ** 31) | 0, phase: 0, selTries0: sel ? sel.tries() : 0 };
+  const startTotal = CTX.best.total;
+  const carry = (C) => { // keep goal info when switching to a newly found selection
+    for (const k of ["goal", "hasArea", "budgetM", "sel"]) if (CTX[k] !== undefined && C[k] === undefined) C[k] = CTX[k];
+  };
+  const finish = () => {
+    const r = pack(CTX, CTX.best, performance.now() - opt.t0, opt.tries);
+    r.selTries = sel ? sel.tries() - opt.selTries0 : 0;
+    r.routeTries = opt.tries;
+    self.postMessage({ result: r, final: true, optimized: true });
+    OPT = null;
+  };
   const tick = () => {
     if (opt !== OPT) return;
-    const sliceEnd = performance.now() + 150;
+    const sliceEnd = Math.min(opt.until, performance.now() + 150);
     try {
-      while (performance.now() < sliceEnd && performance.now() < opt.until && !opt.stop) {
-        const r = attempt(CTX, mulberry32(opt.seed + opt.tries++));
-        const g = CTX.goal || {};
-        const within = !(CTX.budgetM && r.total > CTX.budgetM) && !(g.capM && r.total > g.capM) &&
-                       !(g.type === "newmiles" && g.met && r.newM < g.newM - 1);   // keep the goal met
-        if (r.cost < CTX.best.cost - 1 && within) {
-          CTX.best = r;
-          self.postMessage({ result: pack(CTX, r, performance.now() - opt.t0, opt.tries), final: false });
+      if (sel && !sel.exhausted && opt.phase++ % 5 < 3) {
+        // try other road selections
+        sel.step(sliceEnd);
+        const b = sel.getBest();
+        if (b && b.C !== CTX && goalBetter(CTX.goal, b.r, CTX.best)) {
+          carry(b.C); CTX = b.C; CTX.best = b.r;
+          self.postMessage({ result: pack(CTX, CTX.best, performance.now() - opt.t0, opt.tries), final: false });
+        }
+      } else {
+        // try better routes for the current selection
+        while (performance.now() < sliceEnd && !opt.stop) {
+          const r = attempt(CTX, mulberry32(opt.seed + opt.tries++));
+          const g = CTX.goal || {};
+          const within = !(CTX.budgetM && r.total > CTX.budgetM) && !(g.capM && r.total > g.capM) &&
+                         !(g.type === "newmiles" && g.met && r.newM < g.newM - 1);   // keep the goal met
+          if (r.cost < CTX.best.cost - 1 && within) {
+            CTX.best = r;
+            self.postMessage({ result: pack(CTX, r, performance.now() - opt.t0, opt.tries), final: false });
+          }
         }
       }
-    } catch (err) { console.warn("attempt failed", err); }
+    } catch (err) { console.warn("optimize step failed", err); }
+    if (opt.stop || performance.now() >= opt.until) { finish(); return; }
     const secsLeft = Math.max(0, Math.ceil((opt.until - performance.now()) / 1000));
-    const saved = (startCost - CTX.best.cost) / 1609.344;
-    if (opt.stop || performance.now() >= opt.until) {
-      self.postMessage({ result: pack(CTX, CTX.best, performance.now() - opt.t0, opt.tries), final: true, optimized: true });
-      OPT = null;
-      return;
-    }
-    say(`Optimizing: ${opt.tries} tries, ${saved > 0.05 ? saved.toFixed(1) + " mi better so far" : "no improvement yet"}, ${secsLeft} s left`);
+    const diff = (startTotal - CTX.best.total) / 1609.344;
+    const selN = sel ? sel.tries() - opt.selTries0 : 0;
+    say(`Optimizing: ${sel ? selN + " road selections, " : ""}${opt.tries} routes tried, ` +
+        `${Math.abs(diff) > 0.05 ? (diff > 0 ? diff.toFixed(1) + " mi shorter" : "better mix found") : "no improvement yet"}, ${secsLeft} s left`);
     setTimeout(tick, 0);
   };
   tick();

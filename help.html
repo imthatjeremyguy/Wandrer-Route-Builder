@@ -173,11 +173,13 @@
 
       <section id="optimize">
         <h2>Optimize</h2>
-        <p><em>Build route</em> makes one quick, good route. <em>Optimize</em> keeps trying different versions for the time you pick (10, 20 or 60 seconds): different pairings at dead ends, different directions along streets, different riding orders. Whenever it finds a better one, the map updates.</p>
+        <p><em>Optimize</em> keeps searching for the time you pick (10, 20 or 60 seconds). The map updates whenever it finds something better.</p>
         <ul>
-          <li>"Better" means fewer miles, with U-turns, turns and repeats weighed by your <a href="#smooth">Smooth riding</a> setting.</li>
-          <li>Press <em>Stop</em> to end early and keep the best so far.</li>
-          <li>Bigger areas have more room to improve. Small ones are often already at their best.</li>
+          <li><strong>With a goal</strong> (Max ride distance or New miles target), it spends most of its time trying other <em>selections of roads</em>: more home bases, different region sizes, swapping chunks in and out. The rest goes to better routes through the current best selection.</li>
+          <li><strong>With Everything in the area</strong>, the roads are fixed, so it only looks for a better route: different pairings at dead ends, directions along streets and riding orders.</li>
+          <li>"Better" follows the goal: more new miles for Max ride distance, a shorter loop for New miles target, and otherwise fewer miles with U-turns, turns and repeats weighed by your <a href="#smooth">Smooth riding</a> setting.</li>
+          <li>Optimize never breaks the goal: it won't go over your distance or drop below your new miles.</li>
+          <li>The note at the end says how many selections and routes it tried and what it gained. Press <em>Stop</em> to end early and keep the best so far.</li>
         </ul>
       </section>
 
