@@ -245,6 +245,10 @@ function prepare(startLonLat, area, style) {
 }
 
 /** Context for routing a particular set of new roads (all of them, or a budget's share). */
+/** Partner search can stop once a few partners are in hand and the search has gone well past
+ *  them: far-off partners are almost never the right pairing, and on scattered roads chasing
+ *  all 16 means searching most of a county for every dead end. */
+const nearEnough = (list, d) => list.length >= 4 && d > 2 * list[3][1] + 2000;
 function withRoads(G, req) {
   const { n, edges, SU, SD, start } = G;
   const newAvail = req.reduce((s, i) => s + edges[i].newM, 0);
@@ -284,7 +288,7 @@ function withRoads(G, req) {
     const list = [];
     SU.run([s], (x, d) => {
       if (x !== s && isOdd[x]) list.push([oddIdx.get(x), d]);
-      return list.length >= K_NEAR || d > NEAR_CAP_M;
+      return list.length >= K_NEAR || d > NEAR_CAP_M || nearEnough(list, d);
     });
     for (const [j, d] of list) { uDist.set(i * M + j, d); uDist.set(j * M + i, d); }
     return list;
@@ -298,7 +302,7 @@ function withRoads(G, req) {
     const list = [];
     SD.run([s], (x, d) => {
       if (x !== s && isEnd[x]) list.push([x, d]);
-      return list.length >= K_NEAR || d > NEAR_CAP_M;
+      return list.length >= K_NEAR || d > NEAR_CAP_M || nearEnough(list, d);
     });
     dCand.set(s, list);
   }
@@ -338,6 +342,7 @@ function chunkify(G) {
 /** Candidate "home bases" for a compact ride: chunks with plenty of new road close around
  *  them, weighed against how far they are from the start. Each comes with the order to grow
  *  a region from it (nearest chunks first). Seeds are kept apart so they cover different areas. */
+const PATCH_M = 600;   // typical detour to reach one more ~300 m patch of new road
 function pickSeeds(chunks, wantNewM, maxSeeds) {
   // how far you must grow from each chunk to hold wantNewM, using a ~300 m grid (fast at county scale)
   const CELL = 300, MAX_RING = 70, grid = new Map();
@@ -348,25 +353,38 @@ function pickSeeds(chunks, wantNewM, maxSeeds) {
   });
   const scored = chunks.map((c, i) => {
     const [gx, gy] = cellOf(c);
-    let acc = 0, reach = (MAX_RING + 1) * CELL * 1.5;
+    // rough loop length to gather wantNewM here: the new road itself, plus a detour for every
+    // separate patch of it (scattered single blocks are expensive), plus the spread
+    let acc = 0, patches = 0, reach = (MAX_RING + 1) * CELL * 1.5;
     for (let r = 0; r <= MAX_RING; r++) {
       for (let dx = -r; dx <= r; dx++) {
-        for (const dy of (Math.abs(dx) === r ? range(-r, r) : [-r, r])) acc += grid.get((gx + dx) + ":" + (gy + dy)) || 0;
+        for (const dy of (Math.abs(dx) === r ? range(-r, r) : [-r, r])) {
+          const v = grid.get((gx + dx) + ":" + (gy + dy));
+          if (v) { acc += v; patches++; }
+        }
       }
       if (acc >= wantNewM) { reach = (r + 0.5) * CELL; break; }
     }
-    return { i, est: c.rt + 2.2 * reach };
+    const gather = acc >= wantNewM ? acc + patches * PATCH_M : Infinity;
+    return { i, est: c.rt + gather + reach, near: c.rt + 2.2 * reach };
   });
-  scored.sort((a, b) => a.est - b.est);
   const seeds = [];
-  for (const s of scored) {
-    const c = chunks[s.i];
-    if (seeds.some(t => Math.hypot(chunks[t.i].cx - c.cx, chunks[t.i].cy - c.cy) < 1200)) continue;
-    // growth order (nearest chunks first) only for the seeds actually used
-    s.order = chunks.map((o, j) => [Math.hypot(o.cx - c.cx, o.cy - c.cy), j]).sort((a, b) => a[0] - b[0]).map(o => o[1]);
-    seeds.push(s);
-    if (seeds.length >= maxSeeds) break;
-  }
+  const take = (list, max) => {
+    for (const s of list) {
+      if (seeds.length >= max) break;
+      const c = chunks[s.i];
+      if (seeds.some(t => Math.hypot(chunks[t.i].cx - c.cx, chunks[t.i].cy - c.cy) < 1200)) continue;
+      // growth order (nearest chunks first) only for the seeds actually used
+      s.order = chunks.map((o, j) => [Math.hypot(o.cx - c.cx, o.cy - c.cy), j]).sort((a, b) => a[0] - b[0]).map(o => o[1]);
+      seeds.push(s);
+    }
+  };
+  // county-sized pools: patch-aware score first (dense areas beat scattered scraps);
+  // small pools: closeness first, which routes better there. A few of the other kind either way.
+  const byEst = [...scored].sort((a, b) => a.est - b.est), byNear = [...scored].sort((a, b) => a.near - b.near);
+  const [main, alt] = chunks.length > 300 ? [byEst, byNear] : [byNear, byEst];
+  take(main, maxSeeds);
+  take(alt, seeds.length + 3);
   return seeds;
 }
 function range(a, b) { const out = []; for (let i = a; i <= b; i++) out.push(i); return out; }
@@ -996,8 +1014,8 @@ function optimize(seconds, opts = {}) {
     const r = pack(CTX, CTX.best, performance.now() - (opts.t0 ?? opt.t0), opt.tries);
     r.selTries = sel ? sel.tries() - opt.selTries0 : 0;
     r.routeTries = opt.tries;
+    if (OPT === opt) OPT = null;   // before posting, so a follow-up Optimize isn't cancelled
     self.postMessage({ result: r, final: true, optimized: !opts.silent });
-    OPT = null;
   };
   const tick = () => {
     if (opt !== OPT) return;
