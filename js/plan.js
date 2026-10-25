@@ -178,11 +178,31 @@
     return m;
   }
 
+  // ---------- goal: everything in the area / max ride distance / new-miles target ----------
+  const num = id => { const v = parseFloat($(id).value); return v > 0 ? v : 0; };
+  function goalSpec() {
+    const g = $("goal").value;
+    if (g === "distance") return num("budget") ? { type: "distance", distanceM: num("budget") * 1609.344 } : null;
+    if (g === "newmiles") return num("target-new") ? { type: "newmiles", newM: num("target-new") * 1609.344,
+                                                       capM: num("target-cap") * 1609.344 } : null;
+    return { type: "all" };
+  }
+  function canBuild() {
+    const g = goalSpec();
+    return !!(network && start && g && (g.type !== "all" || area));
+  }
+  function showGoalFields() {
+    const g = $("goal").value;
+    $("goal-distance").hidden = g !== "distance";
+    $("goal-newmiles").hidden = g !== "newmiles";
+  }
+
   function refresh() {
-    $("area-label").textContent = area ? `${fmtMi(areaNewMiles())} new mi inside` : "Not drawn";
+    const optional = $("goal").value !== "all";
+    $("area-label").textContent = area ? `${fmtMi(areaNewMiles())} new mi inside` : optional ? "Optional" : "Not drawn";
     $("draw-shape").textContent = area ? "Redraw" : "Draw";
     $("clear-area").disabled = !area;
-    $("build-route").disabled = !(network && start && area);
+    $("build-route").disabled = !canBuild();
   }
 
   // ---------- solve + optimize ----------
@@ -214,21 +234,20 @@
 
   function setBusy(b, opt = false) {
     optimizing = b && opt;
-    $("build-route").disabled = b || !(network && start && area);
+    $("build-route").disabled = b || !canBuild();
     $("optimize-route").textContent = optimizing ? "Stop" : "Optimize";
     $("optimize-route").disabled = b && !opt;
     $("repeat-penalty").disabled = b;
   }
 
   function build() {
-    if (!(network && start && area)) return;
+    if (!canBuild()) return;
     cancelMode(); clearRoute();
     setBusy(true);
     say("Building route...");
     worker.onmessage = onWorker;
-    const budgetMi = parseFloat($("budget").value);
-    worker.postMessage({ type: "solve", start, ring: area, style: STYLES[$("repeat-penalty").value] || STYLES.some,
-                         budgetM: budgetMi > 0 ? budgetMi * 1609.344 : 0 });
+    worker.postMessage({ type: "solve", start, ring: area, goal: goalSpec(),
+                         style: STYLES[$("repeat-penalty").value] || STYLES.some });
   }
 
   function optimize() {
@@ -266,8 +285,15 @@
     stopPlay();
     if (!keepView) $("route-result").scrollIntoView({ block: "nearest", behavior: matchMedia("(prefers-reduced-motion: reduce)").matches ? "auto" : "smooth" });
     const notes = [];
-    if (r.budgetM) notes.push(`Fits your ${fmtMi(r.budgetM)} mi limit: ${fmtMi(r.newM)} new mi collected, of ${fmtMi(r.areaNewM)} in the area.` +
-      (r.skipped && r.skipped.length ? " Faded red roads were left out." : ""));
+    const g = r.goal || {}, where = r.hasArea ? "in the area" : "within reach";
+    const faded = r.skipped && r.skipped.length ? " Faded red roads were left out." : "";
+    if (g.type === "distance") {
+      notes.push(`Fits your ${fmtMi(g.distanceM)} mi ride: ${fmtMi(r.newM)} new mi collected, of ${fmtMi(r.areaNewM)} ${where}.${faded}`);
+    } else if (g.type === "newmiles") {
+      if (g.met) notes.push(`Shortest loop found with ${fmtMi(g.newM)}+ new mi: collects ${fmtMi(r.newM)} new mi.${faded}`);
+      else if (g.capM) notes.push(`Couldn't reach ${fmtMi(g.newM)} new mi within ${fmtMi(g.capM)} mi. Best within that: ${fmtMi(r.newM)} new mi.${faded}`);
+      else notes.push(`Only ${fmtMi(r.areaNewM)} new mi ${where}, short of ${fmtMi(g.newM)}. This loop collects all of it.`);
+    }
     if (r.dropped) notes.push(`${r.dropped} new road piece${r.dropped > 1 ? "s" : ""} can't be reached legally from this start and ${r.dropped > 1 ? "were" : "was"} skipped.`);
     if (r.wrongWay) notes.push(`Warning: ${r.wrongWay} wrong-way segment${r.wrongWay > 1 ? "s" : ""}.`);
     if (!optimizing) say(notes.join(" "));
@@ -379,12 +405,23 @@
       $("optimize-route").addEventListener("click", optimize);
       Store.get("penalty").then(v => { if (v && STYLES[v]) $("repeat-penalty").value = v; });
       $("repeat-penalty").addEventListener("change", e => { Store.set("penalty", e.target.value); clearRoute(); say(""); });
-      Store.get("budget").then(v => { if (v) $("budget").value = v; });
-      $("budget").addEventListener("change", e => {
-        const v = parseFloat(e.target.value);
-        if (!(v > 0)) e.target.value = "";
-        Store.set("budget", e.target.value); clearRoute(); say("");
+      // goal and its numbers are remembered; an older saved max distance becomes the distance goal
+      Promise.all(["goal", "budget", "target-new", "target-cap"].map(k => Store.get(k))).then(([g, b, tn, tc]) => {
+        if (b) $("budget").value = b;
+        if (tn) $("target-new").value = tn;
+        if (tc) $("target-cap").value = tc;
+        $("goal").value = g || (b ? "distance" : "all");
+        showGoalFields(); refresh();
       });
+      $("goal").addEventListener("change", e => { Store.set("goal", e.target.value); showGoalFields(); clearRoute(); refresh(); say(""); });
+      for (const id of ["budget", "target-new", "target-cap"]) {
+        const el = $(id);
+        el.addEventListener("input", refresh);
+        el.addEventListener("change", () => {
+          if (!(parseFloat(el.value) > 0)) el.value = "";
+          Store.set(id, el.value); clearRoute(); refresh(); say("");
+        });
+      }
       document.addEventListener("keydown", e => { if (e.key === "Escape" && mode) { cancelMode(); say(""); } });
       Store.get("start").then(s => { if (s) setStart(L.latLng(s[1], s[0]), false); });
       Store.get("area").then(a => {

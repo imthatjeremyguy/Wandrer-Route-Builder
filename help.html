@@ -8,7 +8,7 @@
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Overpass:wght@400;600;800&display=swap" rel="stylesheet">
-  <link rel="stylesheet" href="css/help.css?v=18">
+  <link rel="stylesheet" href="css/help.css?v=21">
 </head>
 <body>
   <header class="help-top">
@@ -26,7 +26,7 @@
         <li><a href="#colors">What the map shows</a></li>
         <li><a href="#area">Drawing and editing the area</a></li>
         <li><a href="#smooth">Smooth riding</a></li>
-        <li><a href="#budget">Max distance</a></li>
+        <li><a href="#goals">Goal</a></li>
         <li><a href="#stats">Route stats</a></li>
         <li><a href="#optimize">Optimize</a></li>
         <li><a href="#player">Playing the route</a></li>
@@ -44,9 +44,9 @@
           <li><strong>Export your Wandrer map.</strong> On the Wandrer Big Map, zoom to the area you want, click <em>Download</em>, choose <em>KML/KMZ</em> and <em>Bike</em>. Wandrer emails you the file.</li>
           <li><strong>Upload the KMZ.</strong> Click <em>Upload KMZ</em> or drag the file onto the page. Your untraveled roads appear in red, and the road network loads on its own.</li>
           <li><strong>Set your start.</strong> Click <em>Set start</em>, then click the map. Drag the S marker to fine tune it.</li>
-          <li><strong>Draw an area.</strong> Click <em>Draw</em> and click corners around the roads you want to collect. See <a href="#area">drawing and editing</a>.</li>
+          <li><strong>Draw an area (optional for some goals).</strong> Click <em>Draw</em> and click corners around the roads you want to collect. See <a href="#area">drawing and editing</a>.</li>
           <li><strong>Pick a Smooth riding setting.</strong> <em>Some</em> is a good default. See <a href="#smooth">what the settings mean</a>.</li>
-          <li><strong>Set a max distance (optional).</strong> Leave it empty to collect everything in the area. See <a href="#budget">max distance</a>.</li>
+          <li><strong>Pick a goal.</strong> Collect everything in the area, fit a ride distance, or hit a number of new miles. See <a href="#goals">goals</a>.</li>
           <li><strong>Build the route.</strong> The loop leaves your start, rides the new roads in the area, and comes back.</li>
           <li><strong>Optimize (optional).</strong> Lets the solver spend 10 to 60 seconds looking for a better loop.</li>
           <li><strong>Download GPX</strong> and import it into Strava, RideWithGPS or Garmin Connect.</li>
@@ -128,15 +128,32 @@
         </ul>
       </section>
 
-      <section id="budget">
-        <h2>Max distance</h2>
-        <p>Leave <em>Max distance</em> empty and the route collects every new road in the area. Enter a number of miles and the route stays within it.</p>
+      <section id="goals">
+        <h2>Goal</h2>
+        <p>The goal decides which new roads go into the loop. Every goal starts and ends at your start point.</p>
+        <div class="table-wrap">
+          <table>
+            <thead><tr><th scope="col">Goal</th><th scope="col">What you get</th><th scope="col">Area</th></tr></thead>
+            <tbody>
+              <tr><th scope="row">Everything in the area</th><td>A loop that rides every new road inside the area.</td><td>Required</td></tr>
+              <tr><th scope="row">Max ride distance</th><td>The loop that collects the <strong>most new road</strong> within a total ride distance, for example 25 mi.</td><td>Optional</td></tr>
+              <tr><th scope="row">New miles target</th><td>The <strong>shortest loop</strong> that collects at least that many new miles. Add a <em>Max ride</em> to cap the total distance too.</td><td>Optional</td></tr>
+            </tbody>
+          </table>
+        </div>
+        <h3>Without an area</h3>
         <ul>
-          <li>The solver looks for the loop that collects the <strong>most new road</strong> within your limit. It groups the area's new roads into chunks of a few blocks, then tries different mixes: nearby chunks, dense chunks a little farther out, and swaps between them. That search takes a few seconds and keeps the best loop it finds.</li>
-          <li>The route uses your Smooth riding setting while it fits, so a smoother setting covers a little less new road for the same distance.</li>
-          <li>Roads left out show as <strong>faded red</strong> on the map, and the note under the route says how much of the area's new road it collected.</li>
-          <li>To aim at a particular part of the area, move the start there or redraw the area around it.</li>
-          <li><em>Optimize</em> can shorten a budget route but won't add more roads to it yet.</li>
+          <li><strong>Max ride distance:</strong> every new road within half the ride distance of your start is considered, since a loop can't reach farther than that.</li>
+          <li><strong>New miles target:</strong> the solver looks around your start until it finds comfortably more new road than you asked for, then picks the best of it.</li>
+          <li>Draw an area when you want to keep the ride to one neighborhood or route around a part of town.</li>
+        </ul>
+        <h3>How it chooses</h3>
+        <ul>
+          <li>New roads are grouped into chunks of a few blocks. The solver tries different mixes (nearby chunks, dense chunks a little farther out, swaps between them) for up to about 8 seconds, and keeps the best loop it finds.</li>
+          <li>Your Smooth riding setting applies throughout, so a smoother setting can mean a little less new road for the same distance.</li>
+          <li>Roads left out show as <strong>faded red</strong>, and the note under the route sums up what it collected.</li>
+          <li>If a new miles target can't be reached (not enough new road nearby, or not within your Max ride), the note says so and you get the closest it could do.</li>
+          <li><em>Optimize</em> can shorten the result, but never breaks the goal: it won't go over your distance or drop below your new miles.</li>
         </ul>
       </section>
 
@@ -197,7 +214,7 @@
           <li>Stretches with less than 15 m of new road are ignored. They aren't worth a detour.</li>
           <li>Near the state line, roads on the other side can't be used as connectors yet.</li>
           <li>Routes are loops from your start. Point-to-point routes are coming.</li>
-          <li>Max distance needs an area drawn. Its search is a strong heuristic, not a guarantee of the single best possible loop.</li>
+          <li>The goal searches are strong heuristics, not a guarantee of the single best possible loop.</li>
         </ul>
       </section>
     </main>

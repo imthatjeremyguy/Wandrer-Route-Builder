@@ -31,10 +31,19 @@ self.onmessage = (e) => {
     else if (m.type === "solve") {
       if (OPT) OPT.stop = true;
       const t0 = performance.now();
-      const G = prepare(m.start, m.ring, m.style || { repeat: m.penalty ?? 0.5, turn: 0, uturn: 0 });
+      const goal = m.goal || (m.budgetM > 0 ? { type: "distance", distanceM: m.budgetM } : { type: "all" });
+      let area;
+      if (m.ring) area = { ring: m.ring };
+      else if (goal.type === "distance") area = { radiusM: goal.distanceM / 2 };     // a loop can't reach farther
+      else if (goal.type === "newmiles") area = { radiusM: radiusForNew(m.start, goal.newM, goal.capM) };
+      else throw new Error("Draw an area, or choose a goal so the route knows how far to go.");
+      const G = prepare(m.start, area, m.style || { repeat: m.penalty ?? 0.5, turn: 0, uturn: 0 });
       let r;
-      if (m.budgetM > 0) ({ C: CTX, r } = solveBudget(G, m.budgetM));
+      if (goal.type === "distance") ({ C: CTX, r } = solveBudget(G, goal.distanceM));
+      else if (goal.type === "newmiles") ({ C: CTX, r } = solveTarget(G, goal.newM, goal.capM || 0));
       else { CTX = withRoads(G, G.reqReach); r = attempt(CTX, null); }
+      CTX.goal = { ...goal, ...(CTX.goal || {}) };
+      CTX.hasArea = !!m.ring;
       CTX.best = r;
       self.postMessage({ result: pack(CTX, r, performance.now() - t0, 1), final: true });
     } else if (m.type === "optimize") optimize(m.seconds || 20);
@@ -126,11 +135,22 @@ class Searcher {
 }
 
 // ---------- preparation (once per solve) ----------
-function prepare(startLonLat, ring, style) {
+/** area: {ring:[[lon,lat],...]} or {radiusM} (straight-line reach around the start) */
+function prepare(startLonLat, area, style) {
   const penalty = style.repeat || 0;
   if (!NET) throw new Error("The road network isn't loaded yet.");
   say("Preparing roads...");
-  const xs = ring.map(p => p[0]), ys = ring.map(p => p[1]);
+  const [sx, sy] = startLonLat, cosS = Math.cos(sy * Math.PI / 180), MPD = 111195.08;
+  let xs, ys, inArea;
+  if (area.ring) {
+    const ring = area.ring;
+    xs = ring.map(p => p[0]); ys = ring.map(p => p[1]);
+    inArea = p => pointInRing(p, ring);
+  } else {
+    const R = area.radiusM, dLat = R / MPD, dLon = R / (MPD * cosS);
+    xs = [sx - dLon, sx + dLon]; ys = [sy - dLat, sy + dLat];
+    inArea = ([x, y]) => ((x - sx) * cosS * MPD) ** 2 + ((y - sy) * MPD) ** 2 <= R * R;
+  }
   const W = Math.min(...xs, startLonLat[0]) - MARGIN_DEG, E = Math.max(...xs, startLonLat[0]) + MARGIN_DEG;
   const S = Math.min(...ys, startLonLat[1]) - MARGIN_DEG, N = Math.max(...ys, startLonLat[1]) + MARGIN_DEG;
   const inSub = ([x, y]) => x >= W && x <= E && y >= S && y <= N;
@@ -140,7 +160,7 @@ function prepare(startLonLat, ring, style) {
   for (const ed of NET.edges) {
     if (!inSub(NET.nodes[ed.u]) || !inSub(NET.nodes[ed.v])) continue;
     const mid = ed.coords[ed.coords.length >> 1];
-    const req = ed.newM >= MIN_NEW_M && pointInRing(mid, ring);
+    const req = ed.newM >= MIN_NEW_M && inArea(mid);
     edges.push({ u: L(ed.u), v: L(ed.v), len: ed.len, newM: ed.newM, oneway: ed.oneway, coords: ed.coords, req,
                  w: ed.len * (req ? 1 + penalty : 1) });
   }
@@ -201,13 +221,14 @@ function prepare(startLonLat, ring, style) {
   }
 
   const reqAll = edges.map((ed, i) => (ed.req ? i : -1)).filter(i => i >= 0);
-  if (!reqAll.length) throw new Error("No new roads inside that area. Draw around some red roads.");
+  if (!reqAll.length) throw new Error(area.ring ? "No new roads inside that area. Draw around some red roads."
+    : "No new roads within reach of the start. Move the start or raise the distance.");
   // keep new roads the start can reach and return from
   SD.run([start]); const fwd = Float64Array.from({ length: n }, (_, x) => SD.d(x));
   SR.run([start]); const back = Float64Array.from({ length: n }, (_, x) => SR.d(x));
   const req = reqAll.filter(i => [edges[i].u, edges[i].v].every(x => fwd[x] < Infinity && back[x] < Infinity));
   const dropped = reqAll.length - req.length;
-  if (!req.length) throw new Error("The new roads in that area can't be reached from the start.");
+  if (!req.length) throw new Error("The new roads there can't be reached from the start.");
   // round-trip cost from the start to reach each new road (orders roads for a distance budget)
   const rt = new Map(req.map(i => {
     const ed = edges[i];
@@ -399,6 +420,102 @@ function solveBudget(G, budgetM) {
   best.C.budgetM = budgetM;
   best.C.budgetTries = tries;
   return { C: best.C, r: best.r };
+}
+
+// ---------- new-miles target: the shortest loop that collects at least N new miles ----------
+/** Straight-line reach that holds comfortably more new road than the target (no area drawn). */
+function radiusForNew(start, targetM, capM) {
+  const [sx, sy] = start, cosS = Math.cos(sy * Math.PI / 180), MPD = 111195.08;
+  const near = [];
+  for (const ed of NET.edges) {
+    if (ed.newM < MIN_NEW_M) continue;
+    const [x, y] = ed.coords[ed.coords.length >> 1];
+    near.push([Math.hypot((x - sx) * cosS * MPD, (y - sy) * MPD), ed.newM]);
+  }
+  near.sort((a, b) => a[0] - b[0]);
+  let acc = 0, r = 1500;
+  for (const [d, m] of near) { acc += m; r = d; if (acc >= 2.5 * targetM) break; }
+  r = Math.max(1500, r * 1.25);
+  if (capM) r = Math.min(r, capM / 2);
+  return r;
+}
+
+function solveTarget(G, targetM, capM) {
+  const mi = m => (m / 1609.344).toFixed(1);
+  const deadline = performance.now() + BUDGET_SECS * 1000, timeLeft = () => performance.now() < deadline;
+  const chunks = chunkify(G);
+  const evals = new Map(); let best = null, closest = null, tries = 0;
+  const keyOf = set => [...set].sort((a, b) => a - b).join(",");
+  const ok = r => r.newM >= targetM - 1 && (!capM || r.total <= capM);
+  function evaluate(set) {
+    const k = keyOf(set);
+    if (evals.has(k)) return evals.get(k);
+    const req = []; for (const ci of set) req.push(...chunks[ci].edges);
+    const C = withRoads(G, req), r = attempt(C, null); tries++;
+    const res = { C, r, set: new Set(set) };
+    evals.set(k, res);
+    if (ok(r) && (!best || r.total < best.r.total)) best = res;
+    if ((!capM || r.total <= capM) && (!closest || r.newM > closest.r.newM)) closest = res;
+    say(`Finding the shortest loop with ${mi(targetM)} new mi: ${best ? mi(best.r.total) + " mi so far" : "searching"} (${tries} tries)`);
+    return res;
+  }
+  const ratio = ci => chunks[ci].newM / (chunks[ci].rt + chunks[ci].len);
+  /** smallest prefix of an ordering that reaches the target */
+  function seed(order) {
+    let acc = 0, k = 0;
+    while (k < order.length && acc < targetM) acc += chunks[order[k++]].newM;
+    for (let extra = 0; extra < 8 && timeLeft(); extra++) {
+      const res = evaluate(new Set(order.slice(0, k)));
+      if (res.r.newM >= targetM - 1 || k >= order.length) return res;
+      k++;
+    }
+    return null;
+  }
+  const byRt = chunks.map((_, i) => i).sort((a, b) => chunks[a].rt - chunks[b].rt);
+  const byRatio = chunks.map((_, i) => i).sort((a, b) => ratio(b) - ratio(a));
+  seed(byRt);
+  if (timeLeft()) seed(byRatio);
+
+  // improve: drop chunks that aren't needed, or swap a weak one for a better-placed one
+  for (let round = 0; round < 40 && timeLeft() && best; round++) {
+    const base = best;
+    const weak = [...base.set].sort((a, b) => ratio(a) - ratio(b)).slice(0, 6);
+    for (const ci of weak) {                              // drop
+      if (!timeLeft()) break;
+      const set = new Set(base.set); set.delete(ci);
+      if (set.size) evaluate(set);
+      if (best !== base) break;
+    }
+    if (best !== base) continue;
+    // swap: remove the weakest, add the best-value chunk near the remaining route
+    const routeNodes = [...new Set(base.r.walk.flatMap(([a, b]) => [a, b]))];
+    G.SU.run(routeNodes);
+    const cand = chunks.map((c, i) => {
+      if (base.set.has(i)) return null;
+      let d = Infinity; for (const x of c.nodes) d = Math.min(d, G.SU.d(x));
+      return d === Infinity ? null : [c.newM / (2 * d + c.len), i];
+    }).filter(Boolean).sort((a, b) => b[0] - a[0]).slice(0, 4);
+    for (const ci of weak.slice(0, 3)) {
+      for (const [, add] of cand) {
+        if (!timeLeft()) break;
+        const set = new Set(base.set); set.delete(ci); set.add(add);
+        evaluate(set);
+      }
+      if (best !== base) break;
+    }
+    if (best === base) break;
+  }
+
+  if (best) { best.C.goal = { met: true }; return { C: best.C, r: best.r }; }
+  // couldn't reach the target (not enough new road nearby, or not within the max ride)
+  if (capM) {
+    const res = solveBudget(G, capM);
+    res.C.goal = { met: false };
+    return res;
+  }
+  const res = closest || evaluate(new Set(chunks.map((_, i) => i)));
+  res.C.goal = { met: false };
+  return { C: res.C, r: res.r };
 }
 
 // ---------- one attempt (deterministic when rng is null) ----------
@@ -679,12 +796,12 @@ function pack(C, r, ms, tries) {
   let wrongWay = 0;
   for (const [a, , e] of r.walk) if (!C.allowed(edges[e], a)) wrongWay++;
   let skipped = null;
-  if (C.budgetM) {
+  if (C.budgetM || (C.goal && C.goal.type !== "all")) {
     const inSet = new Set(C.req);
     skipped = C.reqReach.filter(i => !inSet.has(i)).map(i => edges[i].coords);
   }
   return { coords, totalM: r.total, newM: r.newM, repeatM: r.repeat, uturns: r.uturns, turns: r.turns, newAvailM: C.newAvail,
-           areaNewM: C.areaNewM, budgetM: C.budgetM || 0, skipped,
+           areaNewM: C.areaNewM, budgetM: C.budgetM || 0, skipped, goal: C.goal || { type: "all" }, hasArea: !!C.hasArea,
            wrongWay, dropped: C.dropped, startLonLat: lonlat[start], ms: Math.round(ms), tries };
 }
 
@@ -700,7 +817,10 @@ function optimize(seconds) {
     try {
       while (performance.now() < sliceEnd && performance.now() < opt.until && !opt.stop) {
         const r = attempt(CTX, mulberry32(opt.seed + opt.tries++));
-        if (r.cost < CTX.best.cost - 1 && !(CTX.budgetM && r.total > CTX.budgetM)) { // never go over the max distance
+        const g = CTX.goal || {};
+        const within = !(CTX.budgetM && r.total > CTX.budgetM) && !(g.capM && r.total > g.capM) &&
+                       !(g.type === "newmiles" && g.met && r.newM < g.newM - 1);   // keep the goal met
+        if (r.cost < CTX.best.cost - 1 && within) {
           CTX.best = r;
           self.postMessage({ result: pack(CTX, r, performance.now() - opt.t0, opt.tries), final: false });
         }

@@ -10,8 +10,8 @@
   <link href="https://fonts.googleapis.com/css2?family=Overpass:wght@400;600;800&display=swap" rel="stylesheet">
   <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.css">
   <!-- bump APP_VERSION and the ?v= tags on every release so browsers fetch fresh files -->
-  <script>window.APP_VERSION = "20";</script>
-  <link rel="stylesheet" href="css/style.css?v=20">
+  <script>window.APP_VERSION = "21";</script>
+  <link rel="stylesheet" href="css/style.css?v=21">
 </head>
 <body>
   <main class="layout">
@@ -94,13 +94,24 @@
             <option value="strong">Strong: loops over U-turns</option>
           </select>
         </label>
-        <label class="field" for="budget">
-          <span class="plan-k">Max distance
-            <a class="what" href="help.html#budget" target="_blank" rel="noopener" aria-label="How does max distance work?">?</a></span>
+        <label class="field">
+          <span class="plan-k">Goal
+            <a class="what" href="help.html#goals" target="_blank" rel="noopener" aria-label="What do the goals mean?">?</a></span>
+          <select id="goal">
+            <option value="all" selected>Everything in the area</option>
+            <option value="distance">Max ride distance</option>
+            <option value="newmiles">New miles target</option>
+          </select>
         </label>
-        <div class="budget-row">
-          <input type="number" id="budget" min="1" step="1" inputmode="decimal" placeholder="No limit">
-          <span>mi</span>
+        <div class="goal-fields" id="goal-distance" hidden>
+          <label class="num-row"><span class="num-k">Ride distance</span>
+            <input type="number" id="budget" min="1" step="1" inputmode="decimal" placeholder="25"><span>mi</span></label>
+        </div>
+        <div class="goal-fields" id="goal-newmiles" hidden>
+          <label class="num-row"><span class="num-k">New miles</span>
+            <input type="number" id="target-new" min="0.5" step="0.5" inputmode="decimal" placeholder="10"><span>mi</span></label>
+          <label class="num-row"><span class="num-k">Max ride</span>
+            <input type="number" id="target-cap" min="1" step="1" inputmode="decimal" placeholder="Any"><span>mi</span></label>
         </div>
         <button class="btn" id="build-route" type="button" disabled>Build route</button>
 
@@ -153,11 +164,11 @@
 
   <script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.js"></script>
   <script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
-  <script src="js/store.js?v=20"></script>
-  <script src="js/kmz.js?v=20"></script>
-  <script src="js/osm.js?v=20"></script>
-  <script src="js/gpx.js?v=20"></script>
-  <script src="js/plan.js?v=20"></script>
-  <script src="js/app.js?v=20"></script>
+  <script src="js/store.js?v=21"></script>
+  <script src="js/kmz.js?v=21"></script>
+  <script src="js/osm.js?v=21"></script>
+  <script src="js/gpx.js?v=21"></script>
+  <script src="js/plan.js?v=21"></script>
+  <script src="js/app.js?v=21"></script>
 </body>
 </html>
