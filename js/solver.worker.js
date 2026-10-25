@@ -333,25 +333,37 @@ function chunkify(G) {
  *  them, weighed against how far they are from the start. Each comes with the order to grow
  *  a region from it (nearest chunks first). Seeds are kept apart so they cover different areas. */
 function pickSeeds(chunks, wantNewM, maxSeeds) {
-  const n = chunks.length, scored = [];
-  for (let i = 0; i < n; i++) {
-    const ci = chunks[i];
-    const order = chunks.map((c, j) => [Math.hypot(c.cx - ci.cx, c.cy - ci.cy), j]).sort((a, b) => a[0] - b[0]);
-    let acc = 0, reach = Infinity;
-    for (const [d, j] of order) { acc += chunks[j].newM; if (acc >= wantNewM) { reach = d; break; } }
-    if (reach === Infinity) reach = order.at(-1)[0] * 1.5 + 1;
-    scored.push({ i, est: ci.rt + 2.2 * reach, order: order.map(o => o[1]) });
-  }
+  // how far you must grow from each chunk to hold wantNewM, using a ~300 m grid (fast at county scale)
+  const CELL = 300, MAX_RING = 70, grid = new Map();
+  const cellOf = c => [Math.floor(c.cx / CELL), Math.floor(c.cy / CELL)];
+  chunks.forEach(c => {
+    const [gx, gy] = cellOf(c), k = gx + ":" + gy;
+    grid.set(k, (grid.get(k) || 0) + c.newM);
+  });
+  const scored = chunks.map((c, i) => {
+    const [gx, gy] = cellOf(c);
+    let acc = 0, reach = (MAX_RING + 1) * CELL * 1.5;
+    for (let r = 0; r <= MAX_RING; r++) {
+      for (let dx = -r; dx <= r; dx++) {
+        for (const dy of (Math.abs(dx) === r ? range(-r, r) : [-r, r])) acc += grid.get((gx + dx) + ":" + (gy + dy)) || 0;
+      }
+      if (acc >= wantNewM) { reach = (r + 0.5) * CELL; break; }
+    }
+    return { i, est: c.rt + 2.2 * reach };
+  });
   scored.sort((a, b) => a.est - b.est);
   const seeds = [];
   for (const s of scored) {
     const c = chunks[s.i];
     if (seeds.some(t => Math.hypot(chunks[t.i].cx - c.cx, chunks[t.i].cy - c.cy) < 1200)) continue;
+    // growth order (nearest chunks first) only for the seeds actually used
+    s.order = chunks.map((o, j) => [Math.hypot(o.cx - c.cx, o.cy - c.cy), j]).sort((a, b) => a[0] - b[0]).map(o => o[1]);
     seeds.push(s);
     if (seeds.length >= maxSeeds) break;
   }
   return seeds;
 }
+function range(a, b) { const out = []; for (let i = a; i <= b; i++) out.push(i); return out; }
 
 function solveBudget(G, budgetM) {
   const mi = m => (m / 1609.344).toFixed(1);
@@ -372,6 +384,9 @@ function solveBudget(G, budgetM) {
   function evaluate(set) {
     const k = keyOf(set);
     if (evals.has(k)) return evals.get(k);
+    // a loop is at least as long as the roads it rides: reject impossible sets without routing them
+    let roads = 0; for (const ci of set) roads += chunks[ci].len;
+    if (roads > budgetM) { evals.set(k, null); return null; }
     const req = []; for (const ci of set) req.push(...chunks[ci].edges);
     const C = withRoads(G, req), r = attempt(C, null);
     tries++;
@@ -538,6 +553,10 @@ function solveTarget(G, targetM, capM) {
   function evaluate(set) {
     const k = keyOf(set);
     if (evals.has(k)) return evals.get(k);
+    if (capM) {   // a loop is at least as long as its roads: skip sets that can't fit the max ride
+      let roads = 0; for (const ci of set) roads += chunks[ci].len;
+      if (roads > capM) { const res = { C: null, r: { newM: 0, total: Infinity, walk: [] }, set: new Set(set) }; evals.set(k, res); return res; }
+    }
     const req = []; for (const ci of set) req.push(...chunks[ci].edges);
     const C = withRoads(G, req), r = attempt(C, null); tries++;
     const res = { C, r, set: new Set(set) };
