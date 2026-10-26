@@ -3,7 +3,8 @@
  *
  * in:  { elements, lines: [{coords:[[lon,lat],...]}] }
  * out: { nodes: [[lon,lat],...], edges: [...], stats }
- *   edge = { u, v, len, newM, oneway: 0|1|-1, coords:[[lon,lat],...] (u -> v), name, hw, way }
+ *   edge = { u, v, len, newM, oneway: 0|1|-1, coords:[[lon,lat],...] (u -> v), name, hw, way,
+ *            unpaved: true when OSM says so or Wandrer marks most of its new road unpaved }
  */
 const MATCH_DIST = 6;          // m: untraveled line must be this close...
 const MATCH_ANGLE = 25 * Math.PI / 180; // ...and this parallel
@@ -28,6 +29,17 @@ function rideable(t) {
   return true;
 }
 
+const UNPAVED = new Set(["unpaved", "gravel", "fine_gravel", "dirt", "ground", "earth", "grass", "sand", "mud",
+  "compacted", "pebblestone", "rock", "woodchips", "grass_paver", "stepping_stones"]);
+const PAVED = new Set(["paved", "asphalt", "concrete", "concrete:plates", "concrete:lanes", "paving_stones", "sett",
+  "chipseal", "bricks", "metal", "wood"]);
+/** OSM says unpaved (farm tracks count unless tagged with a paved surface) */
+function unpavedOf(t) {
+  const s = (t.surface || "").split(";")[0];
+  if (UNPAVED.has(s)) return true;
+  return t.highway === "track" && !PAVED.has(s);
+}
+
 function onewayOf(t) {
   if (t["oneway:bicycle"] === "no") return 0;
   if (["cycleway", "path"].includes(t.highway)) return 0;
@@ -50,7 +62,7 @@ self.onmessage = (e) => {
 
   // ---- spatial index of untraveled pieces ----
   post("Indexing untraveled roads...");
-  const segs = []; // [ax, ay, bx, by, angle, len]
+  const segs = []; // [ax, ay, bx, by, angle, len, unpaved]
   const seen = new Set();
   for (const l of lines) {
     for (let i = 0; i < l.coords.length - 1; i++) {
@@ -62,7 +74,7 @@ self.onmessage = (e) => {
       seen.add(key);
       const [ax, ay] = P(a), [bx, by] = P(b);
       let ang = Math.atan2(by - ay, bx - ax); ang = ((ang % Math.PI) + Math.PI) % Math.PI;
-      segs.push([ax, ay, bx, by, ang, Math.hypot(bx - ax, by - ay)]);
+      segs.push([ax, ay, bx, by, ang, Math.hypot(bx - ax, by - ay), l.unpaved ? 1 : 0]);
     }
   }
   const untraveledM = segs.reduce((s, g) => s + g[5], 0);
@@ -87,11 +99,12 @@ self.onmessage = (e) => {
     const t = Math.max(0, Math.min(1, along / L));
     return Math.hypot(px - (g[0] + t * dx), py - (g[1] + t * dy));
   }
+  let FRAC_UNPAVED = 0;   // set by newFraction: share of samples matched to unpaved new road
   function newFraction(a, b) {
     const L = Math.hypot(b[0] - a[0], b[1] - a[1]);
     let th = Math.atan2(b[1] - a[1], b[0] - a[0]); th = ((th % Math.PI) + Math.PI) % Math.PI;
     const n = Math.max(1, Math.floor(L / SAMPLE));
-    let hits = 0;
+    let hits = 0; FRAC_UNPAVED = 0;
     for (let i = 0; i < n; i++) {
       const f = (i + 0.5) / n, px = a[0] + f * (b[0] - a[0]), py = a[1] + f * (b[1] - a[1]);
       const cand = grid.get(cellKey(Math.floor(px / CELL), Math.floor(py / CELL)));
@@ -100,9 +113,10 @@ self.onmessage = (e) => {
         const g = segs[j];
         let d = Math.abs(g[4] - th); d = Math.min(d, Math.PI - d);
         // direction must match too: a cross street must not borrow a few metres from the street it meets
-        if (d < MATCH_ANGLE && distToSeg(px, py, g) <= MATCH_DIST) { hits++; break; }
+        if (d < MATCH_ANGLE && distToSeg(px, py, g) <= MATCH_DIST) { hits++; FRAC_UNPAVED += g[6]; break; }
       }
     }
+    FRAC_UNPAVED /= n;
     return hits / n;
   }
 
@@ -136,15 +150,16 @@ self.onmessage = (e) => {
       if (use.get(w.nodes[i]) > 1 || i === w.nodes.length - 1) {
         const ll = chunk.map(k => [w.geometry[k].lon, w.geometry[k].lat]);
         const pp = ll.map(P);
-        let len = 0, newM = 0;
+        let len = 0, newM = 0, unpavedNewM = 0;
         for (let k = 0; k < pp.length - 1; k++) {
           const sl = Math.hypot(pp[k + 1][0] - pp[k][0], pp[k + 1][1] - pp[k][1]);
           len += sl;
-          if (sl > 0 && segs.length) newM += sl * newFraction(pp[k], pp[k + 1]);
+          if (sl > 0 && segs.length) { newM += sl * newFraction(pp[k], pp[k + 1]); unpavedNewM += sl * FRAC_UNPAVED; }
         }
         if (len > 0) edges.push({
           u: nid(w.nodes[chunk[0]], ll[0]), v: nid(w.nodes[chunk.at(-1)], ll.at(-1)),
           len, newM, oneway: ow, coords: ll, name: t.name || "", hw: t.highway, way: w.id,
+          unpaved: unpavedOf(t) || (newM > 0 && unpavedNewM > newM / 2),
         });
         chunk = [i];
       }
@@ -175,6 +190,7 @@ self.onmessage = (e) => {
       stats: {
         untraveledM, rideableM: sum(kept, x => x.len), newM: sum(kept, x => x.newM),
         newEdges: kept.filter(x => x.newM > 0).length, edges: kept.length, nodes: outNodes.length,
+        unpavedNewM: sum(kept, x => (x.unpaved ? x.newM : 0)),
         droppedNewM: droppedNew, ms: Math.round(performance.now() - t0),
       },
     },

@@ -17,6 +17,7 @@
  *   uturn   metres a U-turn costs; U-turns at intersections with another way
  *           out are replaced by a loop when the loop is cheaper than this
  */
+const UNPAVED_W = 5;   // Skip unpaved: a gravel connector counts as 5x its length
 const MIN_NEW_M = 15;      // a block needs at least this much new road to be worth riding
 const MARGIN_DEG = 0.02;   // ~2 km of extra roads around the area for detours
 const K_NEAR = 16;         // nearest candidates kept per junction
@@ -35,7 +36,7 @@ self.onmessage = (e) => {
       let area;
       if (m.ring) area = { ring: m.ring };
       else if (goal.type === "distance") area = { radiusM: goal.distanceM / 2 };     // a loop can't reach farther
-      else if (goal.type === "newmiles") area = { radiusM: radiusForNew(m.start, goal.newM, goal.capM) };
+      else if (goal.type === "newmiles") area = { radiusM: radiusForNew(m.start, goal.newM, goal.capM, !!m.style?.skipUnpaved) };
       else throw new Error("Draw an area, or choose a goal so the route knows how far to go.");
       const G = prepare(m.start, area, m.style || { repeat: m.penalty ?? 0.5, turn: 0, uturn: 0 });
       let r;
@@ -163,12 +164,18 @@ function prepare(startLonLat, area, style) {
   const local = new Map(), lonlat = [];
   const L = g => { let i = local.get(g); if (i === undefined) { i = lonlat.length; local.set(g, i); lonlat.push(NET.nodes[g]); } return i; };
   const edges = [];
+  let unpavedSkippedM = 0;
   for (const ed of NET.edges) {
     if (!inSub(NET.nodes[ed.u]) || !inSub(NET.nodes[ed.v])) continue;
     const mid = ed.coords[ed.coords.length >> 1];
-    const req = ed.newM >= MIN_NEW_M && inArea(mid);
-    edges.push({ u: L(ed.u), v: L(ed.v), len: ed.len, newM: ed.newM, oneway: ed.oneway, coords: ed.coords, req,
-                 w: ed.len * (req ? 1 + penalty : 1) });
+    // Skip unpaved: unpaved new road isn't a target, and unpaved connectors are used only
+    // when the paved way round is much longer
+    const skipIt = style.skipUnpaved && ed.unpaved;
+    if (skipIt && ed.newM >= MIN_NEW_M && inArea(mid)) unpavedSkippedM += ed.newM;
+    const newM = skipIt ? 0 : ed.newM;
+    const req = newM >= MIN_NEW_M && inArea(mid);
+    edges.push({ u: L(ed.u), v: L(ed.v), len: ed.len, newM, oneway: ed.oneway, coords: ed.coords, req,
+                 w: ed.len * (req ? 1 + penalty : 1) * (skipIt ? UNPAVED_W : 1) });
   }
   const n = lonlat.length;
   if (!n) throw new Error("No roads near that start point and area.");
@@ -241,7 +248,7 @@ function prepare(startLonLat, area, style) {
     return [i, Math.min(fwd[ed.u] + back[ed.u], fwd[ed.v] + back[ed.v])];
   }));
   return { n, edges, lonlat, allowed, UA, DA, SU, SD, SX, start, penalty, style, turnAngle, TURN, UTURN,
-           dropped, reqReach: req, rt, areaNewM: req.reduce((s, i) => s + edges[i].newM, 0) };
+           dropped, reqReach: req, rt, areaNewM: req.reduce((s, i) => s + edges[i].newM, 0), unpavedSkippedM };
 }
 
 /** Context for routing a particular set of new roads (all of them, or a budget's share). */
@@ -554,11 +561,11 @@ function makeSelector(gen, getBest, getTries, setDeadline) {
 
 // ---------- new-miles target: the shortest loop that collects at least N new miles ----------
 /** Straight-line reach that holds comfortably more new road than the target (no area drawn). */
-function radiusForNew(start, targetM, capM) {
+function radiusForNew(start, targetM, capM, skipUnpaved) {
   const [sx, sy] = start, cosS = Math.cos(sy * Math.PI / 180), MPD = 111195.08;
   const near = [];
   for (const ed of NET.edges) {
-    if (ed.newM < MIN_NEW_M) continue;
+    if (ed.newM < MIN_NEW_M || (skipUnpaved && ed.unpaved)) continue;
     const [x, y] = ed.coords[ed.coords.length >> 1];
     near.push([Math.hypot((x - sx) * cosS * MPD, (y - sy) * MPD), ed.newM]);
   }
@@ -988,7 +995,8 @@ function pack(C, r, ms, tries) {
   }
   return { coords, totalM: r.total, newM: r.newM, repeatM: r.repeat, uturns: r.uturns, turns: r.turns, newAvailM: C.newAvail,
            areaNewM: C.areaNewM, budgetM: C.budgetM || 0, skipped, goal: C.goal || { type: "all" }, hasArea: !!C.hasArea,
-           wrongWay, dropped: C.dropped, startLonLat: lonlat[start], ms: Math.round(ms), tries };
+           wrongWay, dropped: C.dropped, startLonLat: lonlat[start], ms: Math.round(ms), tries,
+           unpavedSkippedM: C.unpavedSkippedM || 0 };
 }
 
 // ---------- optimizer: better road selections (goals) and better routes ----------

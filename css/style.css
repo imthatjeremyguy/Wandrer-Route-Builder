@@ -131,6 +131,7 @@ select {
 .field select { width: 100%; margin-top: 4px; }
 select:focus-visible { outline: 3px solid var(--paint); outline-offset: 2px; }
 .goal-fields { margin: -4px 0 12px; }
+.check-plan { margin: -2px 0 14px; font-size: 0.95rem; }
 .num-row { display: grid; grid-template-columns: 7.5em 7em auto; align-items: center; gap: 8px; margin-bottom: 8px; color: var(--sign-ink-soft); }
 .num-k { font-size: 0.9rem; }
 .num-row input {

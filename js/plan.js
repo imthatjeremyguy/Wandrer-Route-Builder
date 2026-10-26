@@ -244,6 +244,7 @@
     $("optimize-route").textContent = optimizing ? "Stop" : "Optimize";
     $("optimize-route").disabled = b && !opt;
     $("repeat-penalty").disabled = b;
+    $("skip-unpaved").disabled = b;
   }
 
   function build() {
@@ -253,7 +254,7 @@
     say("Building route...");
     worker.onmessage = onWorker;
     worker.postMessage({ type: "solve", start, ring: area, goal: goalSpec(),
-                         style: STYLES[$("repeat-penalty").value] || STYLES.some });
+                         style: { ...(STYLES[$("repeat-penalty").value] || STYLES.some), skipUnpaved: $("skip-unpaved").checked } });
   }
 
   function optimize() {
@@ -301,6 +302,7 @@
       else if (g.capM) notes.push(`Couldn't reach ${fmtMi(g.newM)} new mi within ${fmtMi(g.capM)} mi. Best within that: ${fmtMi(r.newM)} new mi.${faded}`);
       else notes.push(`Only ${fmtMi(r.areaNewM)} new mi ${where}, short of ${fmtMi(g.newM)}. This loop collects all of it.`);
     }
+    if (r.unpavedSkippedM >= 16) notes.push(`${fmtMi(r.unpavedSkippedM)} mi of unpaved new road ${where} was skipped.`);
     if (r.dropped) notes.push(`${r.dropped} new road piece${r.dropped > 1 ? "s" : ""} can't be reached legally from this start and ${r.dropped > 1 ? "were" : "was"} skipped.`);
     if (r.wrongWay) notes.push(`Warning: ${r.wrongWay} wrong-way segment${r.wrongWay > 1 ? "s" : ""}.`);
     if (!optimizing) say(notes.join(" "));
@@ -412,6 +414,8 @@
       $("optimize-route").addEventListener("click", optimize);
       Store.get("penalty").then(v => { if (v && STYLES[v]) $("repeat-penalty").value = v; });
       $("repeat-penalty").addEventListener("change", e => { Store.set("penalty", e.target.value); clearRoute(); say(""); });
+      Store.get("skip-unpaved").then(v => { if (v === "0") $("skip-unpaved").checked = false; });
+      $("skip-unpaved").addEventListener("change", e => { Store.set("skip-unpaved", e.target.checked ? "1" : "0"); clearRoute(); say(""); });
       // goal and its numbers are remembered; an older saved max distance becomes the distance goal
       Promise.all(["goal", "budget", "target-new", "target-cap"].map(k => Store.get(k))).then(([g, b, tn, tc]) => {
         if (b) $("budget").value = b;

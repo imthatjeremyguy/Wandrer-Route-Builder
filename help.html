@@ -26,6 +26,7 @@
         <li><a href="#colors">What the map shows</a></li>
         <li><a href="#area">Drawing and editing the area</a></li>
         <li><a href="#smooth">Smooth riding</a></li>
+        <li><a href="#unpaved">Skip unpaved roads</a></li>
         <li><a href="#goals">Goal</a></li>
         <li><a href="#stats">Route stats</a></li>
         <li><a href="#optimize">Optimize</a></li>
@@ -126,6 +127,17 @@
           <li>Loops re-ride a little road you've already done this ride. That's expected, and it's why <em>Ridden twice</em> can go up a bit as U-turns go down.</li>
           <li>The extra cost of turns and U-turns only applies while planning. The miles shown are always real miles.</li>
         </ul>
+      </section>
+
+      <section id="unpaved">
+        <h2>Skip unpaved roads</h2>
+        <p>On by default, for road bikes. When it's on:</p>
+        <ul>
+          <li><strong>Unpaved new roads aren't targets.</strong> They don't count toward the goal, and the route won't go out of its way for them. A road counts as unpaved when your Wandrer export marks it that way (dashed red on the map) or OpenStreetMap tags it as gravel, dirt, grass and similar. Farm tracks count as unpaved unless OpenStreetMap says they're paved.</li>
+          <li><strong>Unpaved connectors are a last resort.</strong> A gravel stretch counts as five times its length, so the route takes it only when the paved way round is much longer, or there's no other way through.</li>
+          <li>The note under the route says how many unpaved new miles were skipped.</li>
+        </ul>
+        <p>Turn it off on a gravel or hybrid bike to go after every new road, paved or not. OpenStreetMap surface tags aren't complete, so an untagged gravel road can still slip in as paved.</p>
       </section>
 
       <section id="goals">
