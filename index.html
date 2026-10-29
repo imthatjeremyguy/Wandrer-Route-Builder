@@ -10,8 +10,8 @@
   <link href="https://fonts.googleapis.com/css2?family=Overpass:wght@400;600;800&display=swap" rel="stylesheet">
   <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.css">
   <!-- bump APP_VERSION and the ?v= tags on every release so browsers fetch fresh files -->
-  <script>window.APP_VERSION = "32";</script>
-  <link rel="stylesheet" href="css/style.css?v=32">
+  <script>window.APP_VERSION = "33";</script>
+  <link rel="stylesheet" href="css/style.css?v=33">
 </head>
 <body>
   <main class="layout">
@@ -135,7 +135,7 @@
           <label class="num-row"><span class="num-k">Ride distance</span>
             <input type="number" id="ab-budget" min="1" step="1" inputmode="decimal" placeholder="Direct"><span>mi</span></label>
           <button class="btn" id="build-ab" type="button" disabled>Build A to B route</button>
-          <p class="ab-note">Leave Ride distance blank for the most direct route. Collecting new roads within a longer ride distance comes next.</p>
+          <p class="ab-note">Set a Ride distance longer than the direct route and the extra miles go to collecting new roads between A and B. Leave it blank for the most direct route.</p>
         </div>
 
         <div id="route-result" hidden>
@@ -187,11 +187,11 @@
 
   <script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.js"></script>
   <script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
-  <script src="js/store.js?v=32"></script>
-  <script src="js/kmz.js?v=32"></script>
-  <script src="js/osm.js?v=32"></script>
-  <script src="js/gpx.js?v=32"></script>
-  <script src="js/plan.js?v=32"></script>
-  <script src="js/app.js?v=32"></script>
+  <script src="js/store.js?v=33"></script>
+  <script src="js/kmz.js?v=33"></script>
+  <script src="js/osm.js?v=33"></script>
+  <script src="js/gpx.js?v=33"></script>
+  <script src="js/plan.js?v=33"></script>
+  <script src="js/app.js?v=33"></script>
 </body>
 </html>

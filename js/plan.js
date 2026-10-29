@@ -366,8 +366,10 @@
     if (!keepView) $("route-result").scrollIntoView({ block: "nearest", behavior: matchMedia("(prefers-reduced-motion: reduce)").matches ? "auto" : "smooth" });
     const notes = [];
     if (r.mode === "ab") {
-      notes.push(`Most direct route from A to B. It happens to cover ${fmtMi(r.newM)} new mi.`);
-      if (r.distanceM) notes.push(`Collecting new roads within your ${fmtMi(r.distanceM)} mi is the next piece being built; for now this is the direct route.`);
+      if (r.poolNewM !== undefined) {
+        notes.push(`Collects ${fmtMi(r.newM)} new mi within your ${fmtMi(r.distanceM)} mi ride (the direct route: ${fmtMi(r.directNewM)} new mi in ${fmtMi(r.directM)} mi).`);
+        notes.push(`${fmtMi(r.poolNewM)} new mi are within reach of this ride.${r.skipped && r.skipped.length ? " Faded red roads were left out." : ""}`);
+      } else notes.push(`Most direct route from A to B. It happens to cover ${fmtMi(r.newM)} new mi.`);
       if (r.unpavedM >= 16) notes.push(`Includes ${fmtMi(r.unpavedM)} mi of unpaved road${$("skip-unpaved").checked ? " (no paved way round)" : ""}.`);
       const far = Math.max(r.snapAM, r.snapBM);
       if (far > 150) notes.push(`${r.snapAM >= r.snapBM ? "A" : "B"} is ${Math.round(far)} m from the nearest rideable junction; the route starts or ends there.`);

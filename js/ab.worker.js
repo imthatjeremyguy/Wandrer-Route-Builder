@@ -32,8 +32,16 @@ self.onmessage = e => {
       if (m.distanceM > 0 && m.distanceM < r.totalM - 1)
         throw new Error(`The most direct route from A to B is ${mi(r.totalM)} mi. Set Ride distance to at least that, or leave it blank.`);
       r.distanceM = m.distanceM > 0 ? m.distanceM : 0;
-      r.ms = Math.round(performance.now() - t0);
-      self.postMessage({ result: r, final: true });
+      let out = r;
+      if (r.distanceM && r.distanceM > r.totalM + 50) {
+        const st = m.style || {}, A = snap(m.start, "A"), B = snap(m.end, "B");
+        const c = collect(A.node, B.node, r.distanceM, r.path, st, t0);
+        out = measure(c.walk, A, B);
+        Object.assign(out, { distanceM: r.distanceM, directM: r.totalM, directNewM: r.newM, poolNewM: c.poolNewM,
+                             tries: c.tries, skipped: c.skipped });
+      }
+      out.ms = Math.round(performance.now() - t0);
+      self.postMessage({ result: out, final: true });
     } else if (m.type === "cover") {
       const t0 = performance.now(), st = m.style || {};
       const A = snap(m.start, "the start (A)"), B = snap(m.end, "the end (B)");
@@ -151,7 +159,9 @@ function route(startLL, endLL, style) {
   const path = [];
   for (let a = goal; a >= 0; a = prev[a]) path.push(a);
   path.reverse();
-  return measure(path, A, B);
+  const res = measure(path, A, B);
+  res.path = path;
+  return res;
 }
 
 /** Turn a list of arcs into the result the page shows. */
@@ -183,6 +193,8 @@ function measure(path, A, B) {
  *    keep their legal direction; legal connectors are added wherever ins and outs still don't match
  * 4. string it into one ride from A to B, going straight through junctions where it can */
 const K_NEAR = 12;
+/** a partner search can stop once a few are found and it has gone well past them */
+const nearEnough = (list, d) => list.length >= 4 && d > 2 * list[3][1] + 2000;
 const TRIES = 30;   // stringings tried per road set
 
 /** Dijkstra on nodes. arcsOf: "all" (ignore one-ways) or "legal". Returns a small search object. */
@@ -250,7 +262,7 @@ function cover(A, B, req, style, tries = TRIES) {
     const list = [];
     SS.run([s], "all", w, (x, d) => {
       if (x !== s && isOdd.has(x)) { list.push([x, d]); dist.set(s + ":" + x, d); }
-      return list.length >= K_NEAR;
+      return list.length >= K_NEAR || nearEnough(list, d);
     });
     return list;
   });
@@ -296,7 +308,11 @@ function cover(A, B, req, style, tries = TRIES) {
     const options = [];
     for (const s of new Set(needOut)) {
       let found = 0;
-      SS.run([s], "legal", w, (x, d) => { if (x !== s && needIn.has(x)) { options.push([d, s, x]); found++; } return found >= K_NEAR; });
+      const mine = [];
+      SS.run([s], "legal", w, (x, d) => {
+        if (x !== s && needIn.has(x)) { options.push([d, s, x]); mine.push([x, d]); found++; }
+        return found >= K_NEAR || nearEnough(mine, d);
+      });
     }
     options.sort((p, q) => p[0] - q[0]);
     const outLeft = new Map(); for (const s of needOut) outLeft.set(s, (outLeft.get(s) || 0) + 1);
@@ -418,6 +434,184 @@ function eulerPath(items, A, B, directed, rng = null) {
     throw new Error("The ride didn't end at B.");
   return result;
 }
+
+/* ---------- choosing the roads: the most new road within the ride distance ----------
+ * reach:   new roads where A -> road -> B fits within the distance
+ * patches: reachable new roads grouped by cluster and a ~400 m grid cell
+ * search:  start from the direct route and grow (best new miles per extra mile), try dense home
+ *          bases filled as far as they fit, then swap weak patches out; every candidate set is built
+ *          with the route builder (a few stringings) and kept only if it fits the distance */
+const MIN_NEW_M = 15;     // a block needs this much new road to be worth a detour (same as Loop)
+const CELL_DEG = 0.004;   // patch grid
+const PATCH_M = 600;      // rough detour to reach one more ~300 m patch (same idea as Loop)
+
+function collect(A, B, D, directWalk, style, t0) {
+  const { edges, nodes } = NET, n = nodes.length, skip = !!style.skipUnpaved;
+  const w = a => { const ed = edges[edgeOf(a)]; return ed.len * (skip && ed.unpaved ? UNPAVED_W : 1); };
+  const directM = directWalk.reduce((s, a) => s + edges[edgeOf(a)].len, 0);
+  if (!cover.S || cover.n !== n) { cover.S = makeSearch(n); cover.n = n; }
+  const SS = cover.S;
+  say("Finding new roads within reach...");
+
+  // ---- reach ----
+  const far = (from) => {
+    const d = new Float64Array(n).fill(Infinity);
+    SS.run([from], "all", w, (x, dx) => { if (dx > D) return true; d[x] = dx; return false; });
+    return d;
+  };
+  const dA = far(A), dB = far(B);
+  const via = x => dA[x] + dB[x];
+  const pool = [];
+  edges.forEach((ed, i) => {
+    if (ed.newM < MIN_NEW_M || (skip && ed.unpaved)) return;
+    if (Math.min(via(ed.u), via(ed.v)) + ed.len <= D) pool.push(i);
+  });
+  const poolNewM = pool.reduce((s, i) => s + edges[i].newM, 0);
+
+  // ---- patches ----
+  const parent = new Int32Array(n).map((_, i) => i);
+  const find = x => { while (parent[x] !== x) x = parent[x] = parent[parent[x]]; return x; };
+  for (const i of pool) parent[find(edges[i].u)] = find(edges[i].v);
+  const byKey = new Map(), lat0 = nodes[A][1], kx = MPD * Math.cos(lat0 * Math.PI / 180);
+  for (const i of pool) {
+    const ed = edges[i], [x, y] = ed.coords[ed.coords.length >> 1];
+    const key = find(ed.u) + ":" + Math.floor(x / CELL_DEG) + ":" + Math.floor(y / CELL_DEG);
+    let c = byKey.get(key);
+    if (!c) byKey.set(key, c = { edges: [], newM: 0, len: 0, nodes: new Set(), sx: 0, sy: 0, via: Infinity });
+    c.edges.push(i); c.newM += ed.newM; c.len += ed.len; c.nodes.add(ed.u); c.nodes.add(ed.v);
+    c.sx += x * ed.newM; c.sy += y * ed.newM; c.via = Math.min(c.via, via(ed.u), via(ed.v));
+  }
+  const chunks = [...byKey.values()];
+  for (const c of chunks) { c.cx = c.sx / c.newM * kx; c.cy = c.sy / c.newM * MPD; }
+
+  // ---- evaluation ----
+  const evals = new Map();
+  let best = null, tries = 0;
+  const poolMi = poolNewM / 1609.344;
+  const deadline = t0 + Math.min(30, Math.max(12, 10 + poolMi / 50)) * 1000;
+  const timeLeft = () => performance.now() < deadline;
+  const keyOf = set => [...set].sort((a, b) => a - b).join(",");
+  const better = (a, b) => !b || a.newM > b.newM + 1 || (Math.abs(a.newM - b.newM) <= 1 && a.total < b.total - 1);
+  function evaluate(set) {
+    const k = keyOf(set);
+    if (evals.has(k)) return evals.get(k);
+    let roads = 0; for (const ci of set) roads += chunks[ci].len;
+    if (Math.max(roads, directM) > D) { evals.set(k, null); return null; }   // can't possibly fit
+    const req = []; for (const ci of set) req.push(...chunks[ci].edges);
+    const walk = cover(A, B, req, style, 3);
+    tries++;
+    let total = 0; const seen = new Set(); let newM = 0;
+    for (const a of walk) { const e = edgeOf(a); total += edges[e].len; if (!seen.has(e)) { seen.add(e); newM += edges[e].newM; } }
+    const res = total <= D ? { set: new Set(set), walk, total, newM } : null;
+    evals.set(k, res);
+    if (res && better(res, best)) best = res;
+    const left = Math.max(0, Math.ceil((deadline - performance.now()) / 1000));
+    say(`Collecting new roads within ${(D / 1609.344).toFixed(1)} mi: ${best ? (best.newM / 1609.344).toFixed(1) : "0.0"} new mi so far (${tries} tries, ${left} s left)`);
+    return res;
+  }
+
+  /** add patches with the best new miles per extra mile, while they fit */
+  function grow(cur) {
+    for (let guard = 0; guard < 300 && timeLeft(); guard++) {
+      const onRoute = [...new Set(cur.walk.flatMap(a => [fromOf(edges, a), toOf(edges, a)]))];
+      const room = D - cur.total;
+      SS.run(onRoute, "all", w, (x, d) => d > room / 2);
+      const cand = [];
+      chunks.forEach((c, ci) => {
+        if (cur.set.has(ci)) return;
+        let d = Infinity; for (const x of c.nodes) d = Math.min(d, SS.d(x));
+        if (d === Infinity) return;
+        const est = 2 * d + c.len;
+        if (est * 0.6 > room) return;   // clearly won't fit
+        cand.push([c.newM / est, ci]);
+      });
+      cand.sort((a, b) => b[0] - a[0]);
+      let added = false;
+      for (const [, ci] of cand.slice(0, 6)) {
+        if (!timeLeft()) break;
+        const res = evaluate(new Set([...cur.set, ci]));
+        if (res) { cur = res; added = true; break; }
+      }
+      if (!added) break;
+    }
+    return cur;
+  }
+
+  // 1. the direct route (the real one, turn-aware), grown
+  const seenD = new Set(); let directNew = 0;
+  for (const a of directWalk) { const e = edgeOf(a); if (!seenD.has(e)) { seenD.add(e); directNew += edges[e].newM; } }
+  const base = { set: new Set(), walk: directWalk, total: directM, newM: directNew };
+  evals.set("", base); best = base;
+  grow(base);
+
+  // 2. dense home bases: detour to reach them, plus what gathering new road there costs
+  //    (each separate patch costs a detour, so dense areas beat scattered scraps)
+  const want = (D - directM) * 0.45;
+  if (timeLeft() && chunks.length) {
+    const CELL = 300, MAX_RING = 60, grid = new Map(), cellOf = c => [Math.floor(c.cx / CELL), Math.floor(c.cy / CELL)];
+    chunks.forEach(c => { const [gx, gy] = cellOf(c), k = gx + ":" + gy; grid.set(k, (grid.get(k) || 0) + c.newM); });
+    const scored = chunks.map((c, i) => {
+      const [gx, gy] = cellOf(c);
+      let acc = 0, patches = 0, reach = Infinity;
+      for (let r = 0; r <= MAX_RING && acc < want; r++) {
+        for (let dx = -r; dx <= r; dx++) for (const dy of (Math.abs(dx) === r ? range(-r, r) : [-r, r])) {
+          const v = grid.get((gx + dx) + ":" + (gy + dy)); if (v) { acc += v; patches++; }
+        }
+        if (acc >= want) reach = (r + 0.5) * CELL;
+      }
+      const gather = acc >= want ? acc + patches * PATCH_M + reach : acc + patches * PATCH_M + MAX_RING * CELL;
+      return { i, est: (c.via - directM) + gather };
+    }).sort((a, b) => a.est - b.est);
+    const seeds = [];
+    for (const s of scored) {
+      const c = chunks[s.i];
+      if (seeds.some(t => Math.hypot(chunks[t.i].cx - c.cx, chunks[t.i].cy - c.cy) < 1200)) continue;
+      s.order = chunks.map((o, j) => [Math.hypot(o.cx - c.cx, o.cy - c.cy), j]).sort((a, b) => a[0] - b[0]).map(o => o[1]);
+      seeds.push(s);
+      if (seeds.length >= 8) break;
+    }
+    const regions = [];
+    for (const sd of seeds) {   // largest nearest-first region around each base that fits
+      if (!timeLeft()) break;
+      if (!evaluate(new Set(sd.order.slice(0, 1)))) continue;
+      let lo = 1, hi = sd.order.length + 1, got = evaluate(new Set(sd.order.slice(0, 1)));
+      while (hi - lo > 1 && timeLeft()) {
+        const mid = (lo + hi) >> 1, res = evaluate(new Set(sd.order.slice(0, mid)));
+        if (res) { lo = mid; got = res; } else hi = mid;
+      }
+      regions.push(got);
+    }
+    regions.sort((a, b) => b.newM - a.newM);
+    for (const r of regions.slice(0, 3)) if (timeLeft()) grow(r);   // top up the best regions
+  }
+
+  // 3. swaps: drop a weak patch and regrow into the room it frees
+  for (let round = 0; round < 4 && timeLeft() && best.set.size > 1; round++) {
+    const start = best;
+    const weak = [...start.set].map(ci => [chunks[ci].newM / (chunks[ci].len + Math.max(0, chunks[ci].via - directM)), ci])
+      .sort((a, b) => a[0] - b[0]).slice(0, 4);
+    for (const [, ci] of weak) {
+      if (!timeLeft()) break;
+      const set = new Set(start.set); set.delete(ci);
+      const res = evaluate(set);
+      if (res) grow(res);
+      if (best !== start) break;
+    }
+    if (best === start) break;
+  }
+
+  // final ride for the best set, with the full set of stringings
+  say("Finishing the route...");
+  const req = []; for (const ci of best.set) req.push(...chunks[ci].edges);
+  let walk = cover(A, B, req, style);
+  let total = 0; for (const a of walk) total += edges[edgeOf(a)].len;
+  if (total > D) walk = best.walk;   // rare: keep the version that's known to fit
+  // reachable new roads left out, for the map
+  const skipped = [];
+  chunks.forEach((c, ci) => { if (!best.set.has(ci)) for (const e of c.edges) skipped.push(edges[e].coords); });
+  return { walk, poolNewM, tries, skipped };
+}
+function range(a, b) { const out = []; for (let i = a; i <= b; i++) out.push(i); return out; }
 
 /* ---------- binary heap (min) ---------- */
 class Heap {
