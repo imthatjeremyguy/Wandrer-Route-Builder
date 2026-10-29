@@ -17,10 +17,6 @@ on:
         description: "Download OSM again and rebuild road tiles"
         type: boolean
         default: false
-      export_tiles:
-        description: "Also save the road tiles as a run artifact (1 day), for offline testing"
-        type: boolean
-        default: false
 
 permissions:
   contents: read
@@ -73,14 +69,6 @@ jobs:
         with:
           path: data/roads
           key: roads-indiana-${{ steps.month.outputs.ym }}-${{ hashFiles('tools/build_roads.py') }}
-
-      - name: Save road tiles for offline testing
-        if: ${{ inputs.export_tiles }}
-        uses: actions/upload-artifact@v5
-        with:
-          name: road-tiles
-          path: data/roads
-          retention-days: 1
 
       - name: Assemble site
         run: |
