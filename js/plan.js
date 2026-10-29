@@ -7,7 +7,7 @@
   let map, network = null, worker = null, start = null, area = null, route = null;
   let startMarker = null, areaRect = null, routeLine = null, playDot = null, playTimer = null, mode = null;
   // ride type: "loop" (the loop solver) or "ab" (A to B, its own logic, being built)
-  let rideMode = "loop", end = null, endMarker = null;
+  let rideMode = "loop", end = null, endMarker = null, abWorker = null;
   const pinIcon = (letter, cls = "") => L.divIcon({ className: "start-pin " + cls, html: `<span>${letter}</span>`, iconSize: [28, 28], iconAnchor: [14, 14] });
 
   function say(text, isError) { $("plan-msg").textContent = text || ""; $("plan-msg").classList.toggle("error", !!isError); }
@@ -256,7 +256,9 @@
     $("draw-shape").textContent = area ? "Redraw" : "Draw";
     $("clear-area").disabled = !area;
     $("build-route").disabled = !canBuild();
+    $("build-ab").disabled = !canBuildAB();
   }
+  const canBuildAB = () => !!(network && start && end);
 
   // ---------- solve + optimize ----------
   // Smooth riding: how much distance a smoother ride is worth (see solver.worker.js and help.html#smooth)
@@ -298,6 +300,7 @@
     $("optimize-route").disabled = b && !opt;
     $("repeat-penalty").disabled = b;
     $("skip-unpaved").disabled = b;
+    $("build-ab").disabled = b || !canBuildAB();
   }
 
   function build() {
@@ -308,6 +311,21 @@
     worker.onmessage = onWorker;
     worker.postMessage({ type: "solve", start, ring: area, goal: goalSpec(),
                          style: { ...(STYLES[$("repeat-penalty").value] || STYLES.some), skipUnpaved: $("skip-unpaved").checked } });
+  }
+
+  // ---------- A to B: its own worker (js/ab.worker.js), started the first time it's needed ----------
+  function buildAB() {
+    if (!canBuildAB()) return;
+    cancelMode(); clearRoute();
+    if (!abWorker) {
+      abWorker = new Worker("js/ab.worker.js?v=" + (window.APP_VERSION || "0"));
+      abWorker.postMessage({ type: "network", nodes: network.nodes, edges: network.edges });
+      abWorker.onmessage = onWorker;
+    }
+    setBusy(true);
+    say("Building route...");
+    abWorker.postMessage({ type: "route", start, end,
+      style: { ...(STYLES[$("repeat-penalty").value] || STYLES.some), skipUnpaved: $("skip-unpaved").checked } });
   }
 
   function optimize() {
@@ -343,9 +361,18 @@
     $("route-uturns").textContent = r.uturns ?? "-";
     $("route-turns").textContent = r.turns ?? "-";
     $("route-time").textContent = `${(r.ms / 1000).toFixed(1)} s`;
+    $("route-unit").textContent = r.mode === "ab" ? "mi ride" : "mi loop";
     stopPlay();
     if (!keepView) $("route-result").scrollIntoView({ block: "nearest", behavior: matchMedia("(prefers-reduced-motion: reduce)").matches ? "auto" : "smooth" });
     const notes = [];
+    if (r.mode === "ab") {
+      notes.push(`Best plain route from A to B. It happens to cover ${fmtMi(r.newM)} new mi.`);
+      if (r.unpavedM >= 16) notes.push(`Includes ${fmtMi(r.unpavedM)} mi of unpaved road${$("skip-unpaved").checked ? " (no paved way round)" : ""}.`);
+      const far = Math.max(r.snapAM, r.snapBM);
+      if (far > 150) notes.push(`${r.snapAM >= r.snapBM ? "A" : "B"} is ${Math.round(far)} m from the nearest rideable junction; the route starts or ends there.`);
+      say(notes.join(" "));
+      return;
+    }
     const g = r.goal || {}, where = r.hasArea ? "in the area" : "within reach";
     const faded = r.skipped && r.skipped.length ? " Faded red roads were left out." : "";
     if (g.type === "distance") {
@@ -461,6 +488,7 @@
       $("set-end").addEventListener("click", pickEnd);
       $("clear-start").addEventListener("click", clearStart);
       $("clear-end").addEventListener("click", clearEnd);
+      $("build-ab").addEventListener("click", buildAB);
       document.querySelectorAll('input[name="ride-mode"]').forEach(r => r.addEventListener("change", e => setRideMode(e.target.value)));
       $("draw-shape").addEventListener("click", drawShape);
       $("clear-area").addEventListener("click", clearArea);
@@ -503,6 +531,7 @@
     },
     setNetwork(net) {
       network = net;
+      if (abWorker) { abWorker.terminate(); abWorker = null; }
       if (worker) worker.terminate();
       worker = new Worker("js/solver.worker.js?v=" + (window.APP_VERSION || "0"));
       worker.postMessage({ type: "network", nodes: net.nodes, edges: net.edges });

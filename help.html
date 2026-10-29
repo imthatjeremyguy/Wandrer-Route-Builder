@@ -28,6 +28,7 @@
         <li><a href="#smooth">Smooth riding</a></li>
         <li><a href="#unpaved">Skip unpaved roads</a></li>
         <li><a href="#goals">Goal</a></li>
+        <li><a href="#atob">A to B rides</a></li>
         <li><a href="#stats">Route stats</a></li>
         <li><a href="#optimize">Optimize</a></li>
         <li><a href="#player">Playing the route</a></li>
@@ -169,6 +170,17 @@
         </ul>
       </section>
 
+      <section id="atob">
+        <h2>A to B rides</h2>
+        <p>Switch <em>Plan a ride</em> from <em>Loop</em> to <em>A to B</em> for a ride that ends somewhere else. A to B has its own route logic, separate from loops, and is being built a piece at a time.</p>
+        <ul>
+          <li><strong>Start (A) and End (B):</strong> click <em>Set</em>, then the map. Drag a pin to move it, or <em>Clear</em> to remove it. The start is shared with Loop.</li>
+          <li><strong>Right now</strong> it finds the best plain route from A to B: one-way streets ridden legally, with your <a href="#smooth">Smooth riding</a> and <a href="#unpaved">Skip unpaved</a> settings applied. The note under the route says how much new road it happens to cover.</li>
+          <li><strong>Coming next:</strong> going out of the way to collect new roads between A and B.</li>
+          <li>The area and goal belong to Loop and are hidden in A to B. Optimize is Loop only for now. The player and GPX download work the same.</li>
+        </ul>
+      </section>
+
       <section id="stats">
         <h2>Route stats</h2>
         <dl class="defs">
@@ -228,7 +240,7 @@
           <li>One-way streets are always ridden in the legal direction.</li>
           <li>Stretches with less than 15 m of new road are ignored. They aren't worth a detour.</li>
           <li>Near the state line, roads on the other side can't be used as connectors yet.</li>
-          <li>Routes are loops from your start. Point-to-point routes are coming.</li>
+          <li>A to B rides only find a plain route so far; collecting new roads along the way is coming.</li>
           <li>The goal searches are strong heuristics, not a guarantee of the single best possible loop.</li>
         </ul>
       </section>
