@@ -5,7 +5,6 @@
   const ROUTE = getComputedStyle(document.documentElement).getPropertyValue("--route").trim() || "#1d5fd1";
 
   let map, network = null, worker = null, start = null, area = null, route = null;
-  let end = null, endMarker = null;
   let startMarker = null, areaRect = null, routeLine = null, playDot = null, playTimer = null, mode = null;
 
   function say(text, isError) { $("plan-msg").textContent = text || ""; $("plan-msg").classList.toggle("error", !!isError); }
@@ -23,38 +22,6 @@
     $("set-start").textContent = "Move start";
     if (save) Store.set("start", start);
     clearRoute(); refresh();
-  }
-
-  // ---------- end point (optional: none = a loop back to the start) ----------
-  function setEnd(latlng, save = true) {
-    end = [latlng.lng, latlng.lat];
-    if (!endMarker) {
-      endMarker = L.marker(latlng, { draggable: true, title: "End", keyboard: true,
-        icon: L.divIcon({ className: "start-pin end-pin", html: "<span>E</span>", iconSize: [28, 28], iconAnchor: [14, 14] }) })
-        .addTo(map).on("dragend", e => setEnd(e.target.getLatLng()));
-    } else endMarker.setLatLng(latlng);
-    $("end-label").textContent = `${latlng.lat.toFixed(4)}, ${latlng.lng.toFixed(4)}`;
-    $("set-end").textContent = "Move end";
-    $("clear-end").disabled = false;
-    if (save) Store.set("end", end);
-    clearRoute(); refresh();
-  }
-
-  function clearEnd() {
-    cancelMode();
-    if (endMarker) { map.removeLayer(endMarker); endMarker = null; }
-    end = null; Store.del("end");
-    $("end-label").textContent = "Back at start (loop)";
-    $("set-end").textContent = "Set end";
-    $("clear-end").disabled = true;
-    clearRoute(); refresh(); say("");
-  }
-
-  function pickEnd() {
-    cancelMode();
-    mode = "end"; map.getContainer().classList.add("picking");
-    say("Click the map where your ride ends.");
-    map.once("click", e => { cancelMode(); setEnd(e.latlng); say(""); });
   }
 
   function pickStart() {
@@ -196,7 +163,7 @@
 
   function cancelMode() {
     if (cancelMode.fn) cancelMode.fn();
-    if (mode === "start" || mode === "end") map.off("click");
+    if (mode === "start") map.off("click");
     map.getContainer().classList.remove("picking");
     mode = null;
   }
@@ -220,16 +187,9 @@
                                                        capM: num("target-cap") * 1609.344 } : null;
     return { type: "all" };
   }
-  function canBuild() { return !whyNot(); }
-  /** What's missing before a route can be built (shown under the button), or "" */
-  function whyNot() {
-    if (!network) return "Waiting for the road network to load.";
-    if (!start) return "Set a start point first.";
-    const g = $("goal").value;
-    if (g === "distance" && !num("budget")) return "Enter a ride distance.";
-    if (g === "newmiles" && !num("target-new")) return "Enter how many new miles you want.";
-    if (g === "all" && !area && !end) return "Draw an area, set an end point, or pick a Max ride distance or New miles target goal.";
-    return "";
+  function canBuild() {
+    const g = goalSpec();
+    return !!(network && start && g && (g.type !== "all" || area));
   }
   function showGoalFields() {
     const g = $("goal").value;
@@ -238,13 +198,11 @@
   }
 
   function refresh() {
-    const optional = $("goal").value !== "all" || !!end;
+    const optional = $("goal").value !== "all";
     $("area-label").textContent = area ? `${fmtMi(areaNewMiles())} new mi inside` : optional ? "Optional" : "Not drawn";
     $("draw-shape").textContent = area ? "Redraw" : "Draw";
     $("clear-area").disabled = !area;
     $("build-route").disabled = !canBuild();
-    const why = whyNot();
-    $("build-hint").textContent = why; $("build-hint").hidden = !why;
   }
 
   // ---------- solve + optimize ----------
@@ -295,7 +253,7 @@
     setBusy(true);
     say("Building route...");
     worker.onmessage = onWorker;
-    worker.postMessage({ type: "solve", start, end, ring: area, goal: goalSpec(),
+    worker.postMessage({ type: "solve", start, ring: area, goal: goalSpec(),
                          style: { ...(STYLES[$("repeat-penalty").value] || STYLES.some), skipUnpaved: $("skip-unpaved").checked } });
   }
 
@@ -326,7 +284,6 @@
     if (!keepView) map.fitBounds(routeLine.getBounds(), { padding: [24, 24] });
     $("route-result").hidden = false;
     $("route-total").textContent = fmtMi(r.totalM);
-    $("route-unit").textContent = r.p2p ? "mi ride" : "mi loop";
     $("route-new").textContent = `${fmtMi(r.newM)} mi`;
     $("route-eff").textContent = `${Math.round(100 * r.newM / r.totalM)}%`;
     $("route-repeat").textContent = `${fmtMi(r.repeatM)} mi`;
@@ -338,16 +295,12 @@
     const notes = [];
     const g = r.goal || {}, where = r.hasArea ? "in the area" : "within reach";
     const faded = r.skipped && r.skipped.length ? " Faded red roads were left out." : "";
-    if (g.easy) {
-      notes.push(r.newM > 0
-        ? `A to B with new roads along the way: ${fmtMi(r.newM)} new mi, no side trip over ~1 mi, within 1.5x the direct trip (${fmtMi(r.directM)} mi). Pick a goal or draw an area for more.`
-        : `No new roads close to the way, so this is the direct ride. Pick a goal or draw an area for more.`);
-    } else if (g.type === "distance") {
+    if (g.type === "distance") {
       notes.push(`Fits your ${fmtMi(g.distanceM)} mi ride: ${fmtMi(r.newM)} new mi collected, of ${fmtMi(r.areaNewM)} ${where}.${faded}`);
     } else if (g.type === "newmiles") {
-      if (g.met) notes.push(`Shortest ${r.p2p ? "ride" : "loop"} found with ${fmtMi(g.newM)}+ new mi: collects ${fmtMi(r.newM)} new mi.${faded}`);
+      if (g.met) notes.push(`Shortest loop found with ${fmtMi(g.newM)}+ new mi: collects ${fmtMi(r.newM)} new mi.${faded}`);
       else if (g.capM) notes.push(`Couldn't reach ${fmtMi(g.newM)} new mi within ${fmtMi(g.capM)} mi. Best within that: ${fmtMi(r.newM)} new mi.${faded}`);
-      else notes.push(`Only ${fmtMi(r.areaNewM)} new mi ${where}, short of ${fmtMi(g.newM)}. This ${r.p2p ? "ride" : "loop"} collects all of it.`);
+      else notes.push(`Only ${fmtMi(r.areaNewM)} new mi ${where}, short of ${fmtMi(g.newM)}. This loop collects all of it.`);
     }
     if (r.unpavedSkippedM >= 16) notes.push(`${fmtMi(r.unpavedSkippedM)} mi of unpaved new road ${where} was skipped.`);
     if (r.dropped) notes.push(`${r.dropped} new road piece${r.dropped > 1 ? "s" : ""} can't be reached legally from this start and ${r.dropped > 1 ? "were" : "was"} skipped.`);
@@ -452,8 +405,6 @@
     init(m) {
       map = m;
       $("set-start").addEventListener("click", pickStart);
-      $("set-end").addEventListener("click", pickEnd);
-      $("clear-end").addEventListener("click", clearEnd);
       $("draw-shape").addEventListener("click", drawShape);
       $("clear-area").addEventListener("click", clearArea);
       $("build-route").addEventListener("click", build);
@@ -484,7 +435,6 @@
       }
       document.addEventListener("keydown", e => { if (e.key === "Escape" && mode) { cancelMode(); say(""); } });
       Store.get("start").then(s => { if (s) setStart(L.latLng(s[1], s[0]), false); });
-      Store.get("end").then(s => { if (s) setEnd(L.latLng(s[1], s[0]), false); });
       Store.get("area").then(a => {
         if (!a) return;
         // older versions saved a box as [w, s, e, n]

@@ -5,9 +5,7 @@
  *
  * Messages in:
  *   {type:"network", nodes, edges}                         once per network
- *   {type:"solve", start:[lon,lat], end:[lon,lat]|null, ring:[[lon,lat],...], style}   first pass
- *   (end set: a point-to-point ride, solved as a loop with an imaginary edge from end back
- *    to start, then cut open at that edge)
+ *   {type:"solve", start:[lon,lat], ring:[[lon,lat],...], style}   first pass
  *   {type:"optimize", seconds}                             improve the last solve
  *   {type:"stop"}                                          end optimizing early
  * Messages out:
@@ -19,7 +17,6 @@
  *   uturn   metres a U-turn costs; U-turns at intersections with another way
  *           out are replaced by a loop when the loop is cheaper than this
  */
-const EASY_DETOUR_M = 1600;   // easy A to B: a new road may add at most ~1 mi to the trip
 const UNPAVED_W = 5;   // Skip unpaved: a gravel connector counts as 5x its length
 const MIN_NEW_M = 15;      // a block needs at least this much new road to be worth riding
 const MARGIN_DEG = 0.02;   // ~2 km of extra roads around the area for detours
@@ -35,30 +32,15 @@ self.onmessage = (e) => {
     else if (m.type === "solve") {
       if (OPT) OPT.stop = true;
       const t0 = performance.now();
-      let goal = m.goal || (m.budgetM > 0 ? { type: "distance", distanceM: m.budgetM } : { type: "all" });
-      // easy A to B: an end point but no area or goal number -> the most new road within
-      // 1.5x the direct trip (straight line x 1.4 as a generous guess at the road distance)
-      const easy = m.end && !m.ring && goal.type === "all";
-      if (easy) {
-        const c = Math.cos(m.start[1] * Math.PI / 180), MPD = 111195.08;
-        const line = Math.hypot((m.end[0] - m.start[0]) * c * MPD, (m.end[1] - m.start[1]) * MPD);
-        goal = { type: "distance", distanceM: Math.max(1.5 * 1.4 * line, line + 3000), easy: true };
-      }
+      const goal = m.goal || (m.budgetM > 0 ? { type: "distance", distanceM: m.budgetM } : { type: "all" });
       let area;
       if (m.ring) area = { ring: m.ring };
-      else if (goal.type === "distance") area = { reachM: goal.distanceM, allowEmpty: easy, maxDetourM: easy ? EASY_DETOUR_M : 0 };   // a ride can't reach farther
-      else if (goal.type === "newmiles") area = { reachM: reachForNew(m.start, m.end, goal.newM, goal.capM, !!m.style?.skipUnpaved) };
+      else if (goal.type === "distance") area = { radiusM: goal.distanceM / 2 };     // a loop can't reach farther
+      else if (goal.type === "newmiles") area = { radiusM: radiusForNew(m.start, goal.newM, goal.capM, !!m.style?.skipUnpaved) };
       else throw new Error("Draw an area, or choose a goal so the route knows how far to go.");
-      const G = prepare(m.start, area, m.style || { repeat: m.penalty ?? 0.5, turn: 0, uturn: 0 }, m.end || null);
-      if (easy) goal.distanceM = Math.max(1.5 * G.directM, G.directM + 1609);   // now that the road trip is known
-      const capOf = goal.type === "distance" ? goal.distanceM : goal.capM || 0;
-      if (G.end !== G.start && capOf && G.directM > capOf)
-        throw new Error(`The end is ${(G.directM / 1609.344).toFixed(1)} mi from the start by road, more than your ${(capOf / 1609.344).toFixed(1)} mi max. Raise it or move the end.`);
+      const G = prepare(m.start, area, m.style || { repeat: m.penalty ?? 0.5, turn: 0, uturn: 0 });
       let r;
-      const direct = () => { CTX = withRoads(G, []); r = attempt(CTX, null); };
-      if (easy && !G.reqReach.length) direct();          // nothing new nearby: just the trip
-      else if (easy) { try { ({ C: CTX, r } = solveBudget(G, goal.distanceM)); } catch (err) { direct(); } }
-      else if (goal.type === "distance") ({ C: CTX, r } = solveBudget(G, goal.distanceM));
+      if (goal.type === "distance") ({ C: CTX, r } = solveBudget(G, goal.distanceM));
       else if (goal.type === "newmiles") ({ C: CTX, r } = solveTarget(G, goal.newM, goal.capM || 0));
       else { CTX = withRoads(G, G.reqReach); r = attempt(CTX, null); }
       CTX.goal = { ...goal, ...(CTX.goal || {}) };
@@ -160,29 +142,24 @@ class Searcher {
 }
 
 // ---------- preparation (once per solve) ----------
-/** area: {ring:[[lon,lat],...]} or {reachM}: places where start -> there -> end is at most
- *  reachM in a straight line (a circle of radius reachM/2 for a loop, an ellipse otherwise) */
-function prepare(startLonLat, area, style, endLonLat = null) {
+/** area: {ring:[[lon,lat],...]} or {radiusM} (straight-line reach around the start) */
+function prepare(startLonLat, area, style) {
   const penalty = style.repeat || 0;
   if (!NET) throw new Error("The road network isn't loaded yet.");
   say("Preparing roads...");
-  const endLL = endLonLat || startLonLat;
   const [sx, sy] = startLonLat, cosS = Math.cos(sy * Math.PI / 180), MPD = 111195.08;
-  const [tx, ty] = endLL;
   let xs, ys, inArea;
   if (area.ring) {
     const ring = area.ring;
     xs = ring.map(p => p[0]); ys = ring.map(p => p[1]);
     inArea = p => pointInRing(p, ring);
   } else {
-    const R = area.reachM / 2, dLat = R / MPD, dLon = R / (MPD * cosS);
-    const cx = (sx + tx) / 2, cy = (sy + ty) / 2;
-    xs = [cx - dLon, cx + dLon]; ys = [cy - dLat, cy + dLat];
-    const dist = (x, y, ax, ay) => Math.hypot((x - ax) * cosS * MPD, (y - ay) * MPD);
-    inArea = ([x, y]) => dist(x, y, sx, sy) + dist(x, y, tx, ty) <= area.reachM;
+    const R = area.radiusM, dLat = R / MPD, dLon = R / (MPD * cosS);
+    xs = [sx - dLon, sx + dLon]; ys = [sy - dLat, sy + dLat];
+    inArea = ([x, y]) => ((x - sx) * cosS * MPD) ** 2 + ((y - sy) * MPD) ** 2 <= R * R;
   }
-  const W = Math.min(...xs, sx, tx) - MARGIN_DEG, E = Math.max(...xs, sx, tx) + MARGIN_DEG;
-  const S = Math.min(...ys, sy, ty) - MARGIN_DEG, N = Math.max(...ys, sy, ty) + MARGIN_DEG;
+  const W = Math.min(...xs, startLonLat[0]) - MARGIN_DEG, E = Math.max(...xs, startLonLat[0]) + MARGIN_DEG;
+  const S = Math.min(...ys, startLonLat[1]) - MARGIN_DEG, N = Math.max(...ys, startLonLat[1]) + MARGIN_DEG;
   const inSub = ([x, y]) => x >= W && x <= E && y >= S && y <= N;
   const local = new Map(), lonlat = [];
   const L = g => { let i = local.get(g); if (i === undefined) { i = lonlat.length; local.set(g, i); lonlat.push(NET.nodes[g]); } return i; };
@@ -255,54 +232,23 @@ function prepare(startLonLat, area, style, endLonLat = null) {
     const dx = (lonlat[i][0] - startLonLat[0]) * cos, dy = lonlat[i][1] - startLonLat[1], d = dx * dx + dy * dy;
     if (d < best) { best = d; start = i; }
   }
-  // snap end: nearest node with a legal way in (the start itself for a loop)
-  let end = start;
-  if (endLonLat) {
-    best = Infinity;
-    const cosE = Math.cos(endLonLat[1] * Math.PI / 180);
-    for (let i = 0; i < n; i++) {
-      if (RA.start[i + 1] === RA.start[i]) continue;
-      const dx = (lonlat[i][0] - endLonLat[0]) * cosE, dy = lonlat[i][1] - endLonLat[1], d = dx * dx + dy * dy;
-      if (d < best) { best = d; end = i; }
-    }
-  }
 
   const reqAll = edges.map((ed, i) => (ed.req ? i : -1)).filter(i => i >= 0);
-  if (!reqAll.length && end !== start && area.reachM &&
-      Math.hypot((tx - sx) * cosS * MPD, (ty - sy) * MPD) >= area.reachM * 0.95)
-    throw new Error("The end is too far from the start for that distance. Raise it or move the end closer.");
-  if (!reqAll.length && !area.allowEmpty) throw new Error(area.ring ? "No new roads inside that area. Draw around some red roads."
+  if (!reqAll.length) throw new Error(area.ring ? "No new roads inside that area. Draw around some red roads."
     : "No new roads within reach of the start. Move the start or raise the distance.");
-  // keep new roads the start can reach and that can still get to the end
+  // keep new roads the start can reach and return from
   SD.run([start]); const fwd = Float64Array.from({ length: n }, (_, x) => SD.d(x));
-  SR.run([end]); const back = Float64Array.from({ length: n }, (_, x) => SR.d(x));
-  if (fwd[end] === Infinity) throw new Error("There's no legal way from the start to the end. Move one of them.");
-  const directM = end === start ? 0 : pathLen(SD, start, end, edges);
-  let req = reqAll.filter(i => [edges[i].u, edges[i].v].every(x => fwd[x] < Infinity && back[x] < Infinity));
+  SR.run([start]); const back = Float64Array.from({ length: n }, (_, x) => SR.d(x));
+  const req = reqAll.filter(i => [edges[i].u, edges[i].v].every(x => fwd[x] < Infinity && back[x] < Infinity));
   const dropped = reqAll.length - req.length;
-  // easy A to B: only new roads close to the way (each one's detour beyond the direct trip is
-  // at most maxDetourM), so the ride picks things up as it goes instead of long side trips
-  if (area.maxDetourM && end !== start) {
-    const via = fwd[end];
-    req = req.filter(i => {
-      const ed = edges[i];
-      return Math.min(fwd[ed.u] + back[ed.v], fwd[ed.v] + back[ed.u]) + ed.w - via <= area.maxDetourM;
-    });
-  }
-  if (!req.length && !area.allowEmpty) throw new Error("The new roads there can't be reached from the start.");
+  if (!req.length) throw new Error("The new roads there can't be reached from the start.");
   // round-trip cost from the start to reach each new road (orders roads for a distance budget)
   const rt = new Map(req.map(i => {
     const ed = edges[i];
     return [i, Math.min(fwd[ed.u] + back[ed.u], fwd[ed.v] + back[ed.v])];
   }));
-  return { n, edges, lonlat, allowed, UA, DA, SU, SD, SX, start, end, directM, penalty, style, turnAngle, TURN, UTURN,
+  return { n, edges, lonlat, allowed, UA, DA, SU, SD, SX, start, penalty, style, turnAngle, TURN, UTURN,
            dropped, reqReach: req, rt, areaNewM: req.reduce((s, i) => s + edges[i].newM, 0), unpavedSkippedM };
-}
-
-/** Real length of the cheapest legal path from a to b (the search itself weighs turns etc.). */
-function pathLen(S, a, b, edges) {
-  S.run([a], x => x === b);
-  return S.path(b).reduce((s, st) => s + edges[st[2]].len, 0);
 }
 
 /** Context for routing a particular set of new roads (all of them, or a budget's share). */
@@ -311,15 +257,12 @@ function pathLen(S, a, b, edges) {
  *  all 16 means searching most of a county for every dead end. */
 const nearEnough = (list, d) => list.length >= 4 && d > 2 * list[3][1] + 2000;
 function withRoads(G, req) {
-  const { n, edges, SU, SD, start, end } = G;
+  const { n, edges, SU, SD, start } = G;
   const newAvail = req.reduce((s, i) => s + edges[i].newM, 0);
 
   // undirected joins (greedy Prim over clusters of new road, from the start's cluster)
   say("Joining clusters of new road...");
   const base = req.map(i => [edges[i].u, edges[i].v, i]);
-  // point to point: an imaginary edge from the end back to the start closes the ride into a
-  // loop for planning (edge id -1); attempt() cuts the loop open there
-  if (end !== start) base.push([end, start, -1]);
   {
     const parent = Int32Array.from({ length: n }, (_, i) => i);
     const find = x => { while (parent[x] !== x) x = parent[x] = parent[parent[x]]; return x; };
@@ -359,7 +302,7 @@ function withRoads(G, req) {
   });
 
   // directed nearest neighbours among endpoints of new roads (for balancing)
-  const ends = new Set([start, end]); req.forEach(i => { ends.add(edges[i].u); ends.add(edges[i].v); });
+  const ends = new Set([start]); req.forEach(i => { ends.add(edges[i].u); ends.add(edges[i].v); });
   const isEnd = new Uint8Array(n); ends.forEach(x => (isEnd[x] = 1));
   const dCand = new Map(); // node -> [[node, dist], ...]
   for (const s of ends) {
@@ -369,13 +312,6 @@ function withRoads(G, req) {
       return list.length >= K_NEAR || d > NEAR_CAP_M || nearEnough(list, d);
     });
     dCand.set(s, list);
-  }
-  // point to point: the start must be able to send one unit of flow all the way to the end,
-  // usually far past its nearby candidates; give the balancer that option directly
-  if (end !== start) {
-    SD.run([start], x => x === end);
-    const l = dCand.get(start);
-    if (!l.some(([x]) => x === end)) l.push([end, SD.d(end)]);
   }
 
   return { ...G, req, base, odd, uCand, uDist, M, dCand, newAvail, pathU: new Map(), pathD: new Map() };
@@ -488,7 +424,7 @@ function solveBudget(G, budgetM) {
     const res = r.total <= budgetM ? { C, r, set: new Set(set) } : null;
     evals.set(k, res);
     if (res && better(res, best)) best = res;
-    say(`Finding the best ${mi(budgetM)} mi ride: ${best ? mi(best.r.newM) + " new mi so far" : "searching"} (${tries} tries)`);
+    say(`Finding the best ${mi(budgetM)} mi loop: ${best ? mi(best.r.newM) + " new mi so far" : "searching"} (${tries} tries)`);
     return res;
   }
   const timeLeft = () => performance.now() < deadline;
@@ -539,7 +475,7 @@ function solveBudget(G, budgetM) {
   const first = evaluate(new Set(byRt.slice(0, 1)));
   if (!first) {
     const one = withRoads(G, chunks[byRt[0]].edges), r1 = attempt(one, null);
-    throw new Error(`Even the nearest new road needs a ${mi(r1.total)} mi ride. Raise the ride distance or move the start.`);
+    throw new Error(`Even the nearest new road needs a ${mi(r1.total)} mi loop. Raise the max distance or move the start.`);
   }
   // largest k in [1, n] whose first k chunks fit
   let seed1 = first, lo = 1, hi = byRt.length + 1;
@@ -625,24 +561,20 @@ function makeSelector(gen, getBest, getTries, setDeadline) {
 
 // ---------- new-miles target: the shortest loop that collects at least N new miles ----------
 /** Straight-line reach that holds comfortably more new road than the target (no area drawn). */
-/** How far to look for a new-miles target, as a straight-line start -> road -> end reach
- *  (twice the radius for a loop). Grows until it holds 2.5x the target. */
-function reachForNew(start, endLL, targetM, capM, skipUnpaved) {
-  const [sx, sy] = start, [tx, ty] = endLL || start, cosS = Math.cos(sy * Math.PI / 180), MPD = 111195.08;
-  const dist = (x, y, ax, ay) => Math.hypot((x - ax) * cosS * MPD, (y - ay) * MPD);
-  const direct = dist(sx, sy, tx, ty);
+function radiusForNew(start, targetM, capM, skipUnpaved) {
+  const [sx, sy] = start, cosS = Math.cos(sy * Math.PI / 180), MPD = 111195.08;
   const near = [];
   for (const ed of NET.edges) {
     if (ed.newM < MIN_NEW_M || (skipUnpaved && ed.unpaved)) continue;
     const [x, y] = ed.coords[ed.coords.length >> 1];
-    near.push([dist(x, y, sx, sy) + dist(x, y, tx, ty), ed.newM]);
+    near.push([Math.hypot((x - sx) * cosS * MPD, (y - sy) * MPD), ed.newM]);
   }
   near.sort((a, b) => a[0] - b[0]);
-  let acc = 0, reach = direct + 3000;
-  for (const [d, m] of near) { acc += m; reach = d; if (acc >= 2.5 * targetM) break; }
-  reach = Math.max(direct + 3000, direct + (reach - direct) * 1.25);
-  if (capM) reach = Math.min(reach, capM);
-  return reach;
+  let acc = 0, r = 1500;
+  for (const [d, m] of near) { acc += m; r = d; if (acc >= 2.5 * targetM) break; }
+  r = Math.max(1500, r * 1.25);
+  if (capM) r = Math.min(r, capM / 2);
+  return r;
 }
 
 function solveTarget(G, targetM, capM) {
@@ -666,7 +598,7 @@ function solveTarget(G, targetM, capM) {
     evals.set(k, res);
     if (ok(r) && (!best || r.total < best.r.total)) best = res;
     if ((!capM || r.total <= capM) && (!closest || r.newM > closest.r.newM)) closest = res;
-    say(`Finding the shortest ride with ${mi(targetM)} new mi: ${best ? mi(best.r.total) + " mi so far" : "searching"} (${tries} tries)`);
+    say(`Finding the shortest loop with ${mi(targetM)} new mi: ${best ? mi(best.r.total) + " mi so far" : "searching"} (${tries} tries)`);
     return res;
   }
   const ratio = ci => chunks[ci].newM / (chunks[ci].rt + chunks[ci].len);
@@ -781,7 +713,7 @@ function solveTarget(G, targetM, capM) {
 
 // ---------- one attempt (deterministic when rng is null) ----------
 function attempt(C, rng) {
-  const { n, edges, allowed, SU, SD, start, end, req, base, odd, uCand, uDist, M } = C;
+  const { n, edges, allowed, SU, SD, start, req, base, odd, uCand, uDist, M } = C;
   const rand = rng || (() => 0.5);
 
   // 1. pair odd junctions: greedy on (optionally jittered) distances, then 2-opt
@@ -850,7 +782,7 @@ function attempt(C, rng) {
     for (let i = circuit.length - 1; i >= 0; i--) {
       const [, k, from] = circuit[i]; if (k < 0) continue;
       const e = items[k][2];
-      if (e >= 0 && edges[e].req && !orient.has(e)) orient.set(e, from);
+      if (edges[e].req && !orient.has(e)) orient.set(e, from);
     }
   }
 
@@ -862,7 +794,6 @@ function attempt(C, rng) {
     if (!allowed(ed, a)) [a, b] = [b, a];
     arcs.push([a, b, e]);
   }
-  if (end !== start) arcs.push([end, start, -1]);   // imaginary edge, see withRoads
   balance(C, arcs, false);
   joinDirected(C, arcs);
 
@@ -879,9 +810,8 @@ function attempt(C, rng) {
       let pick = l.length - 1;
       if (inK >= 0) {
         const inE = arcs[inK][2]; let best = Infinity;
-        for (let i = l.length - 1; i >= 0 && inE >= 0; i--) {
-          const oe = arcs[l[i]][2];
-          const a = (oe < 0 ? 2 : C.turnAngle(x, inE, oe)) + (rng ? rand() * 0.35 : 0);
+        for (let i = l.length - 1; i >= 0; i--) {
+          const a = C.turnAngle(x, inE, arcs[l[i]][2]) + (rng ? rand() * 0.35 : 0);
           if (a < best) { best = a; pick = i; }
         }
       }
@@ -891,13 +821,9 @@ function attempt(C, rng) {
   }
   seq.reverse();
   const steps = seq.filter(k => k >= 0);
-  if (steps.length !== arcs.length) throw new Error("Couldn't join every road into one ride. Try a smaller area.");
+  if (steps.length !== arcs.length) throw new Error("Couldn't join every road into one loop. Try a smaller area.");
 
   let walk = steps.map(k => arcs[k]);
-  if (end !== start) {   // cut the loop open at the imaginary edge: start ... end
-    const v = walk.findIndex(st => st[2] < 0);
-    walk = walk.slice(v + 1).concat(walk.slice(0, v));
-  }
   if (C.style.uturn > 0) walk = cleanupUturns(C, walk);
   return score(C, walk);
 }
@@ -1004,7 +930,6 @@ function balance(C, arcs, full) {
     let bestT = -1;
     for (let j = 0; j < nT; j++) if (demand[j] > 0 && dist[nS + j] < Infinity && (bestT < 0 || dist[nS + j] < dist[nS + bestT])) bestT = j;
     if (bestT < 0) {
-      if (!demand.some(v => v > 0)) break;   // all balanced: done
       // nearby candidates weren't enough: start over with full searches (keeps the flow optimal)
       if (!full) return balance(C, arcs, true);
       break;
@@ -1070,8 +995,7 @@ function pack(C, r, ms, tries) {
   }
   return { coords, totalM: r.total, newM: r.newM, repeatM: r.repeat, uturns: r.uturns, turns: r.turns, newAvailM: C.newAvail,
            areaNewM: C.areaNewM, budgetM: C.budgetM || 0, skipped, goal: C.goal || { type: "all" }, hasArea: !!C.hasArea,
-           wrongWay, dropped: C.dropped, startLonLat: lonlat[start], endLonLat: lonlat[C.end], p2p: C.end !== start,
-           directM: C.directM || 0, ms: Math.round(ms), tries,
+           wrongWay, dropped: C.dropped, startLonLat: lonlat[start], ms: Math.round(ms), tries,
            unpavedSkippedM: C.unpavedSkippedM || 0 };
 }
 
@@ -1133,8 +1057,8 @@ function optimize(seconds, opts = {}) {
     const selN = sel ? sel.tries() - opt.selTries0 : 0;
     if (opts.silent) {
       const g = CTX.goal || {}, b = CTX.best;
-      say(`Searching for the best ride: ${selN} road selections, ${opt.tries} routes tried. Best so far: ` +
-          (g.type === "distance" ? `${(b.newM / 1609.344).toFixed(1)} new mi` : `${(b.total / 1609.344).toFixed(1)} mi ride`) + `, ${secsLeft} s left`);
+      say(`Searching for the best loop: ${selN} road selections, ${opt.tries} routes tried. Best so far: ` +
+          (g.type === "distance" ? `${(b.newM / 1609.344).toFixed(1)} new mi` : `${(b.total / 1609.344).toFixed(1)} mi loop`) + `, ${secsLeft} s left`);
     } else say(`Optimizing: ${sel ? selN + " road selections, " : ""}${opt.tries} routes tried, ` +
         `${Math.abs(diff) > 0.05 ? (diff > 0 ? diff.toFixed(1) + " mi shorter" : "better mix found") : "no improvement yet"}, ${secsLeft} s left`);
     setTimeout(tick, 0);
