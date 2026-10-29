@@ -152,6 +152,7 @@ select:focus-visible { outline: 3px solid var(--paint); outline-offset: 2px; }
   background: var(--sign); color: #fff; font-weight: 800; font-size: 14px;
   border: 3px solid #fff; box-shadow: 0 1px 4px rgba(0,0,0,0.4);
 }
+.end-pin span { background: var(--paint); color: #1b1f23; }
 .leaflet-container.picking { cursor: crosshair; }
 .area-handle { border-radius: 50%; border: 2px solid #12573a; background: #fff; box-shadow: 0 1px 3px rgba(0,0,0,0.35); cursor: grab; }
 .area-handle.mid { opacity: 0.8; background: #f2b705; }

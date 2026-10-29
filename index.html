@@ -4,14 +4,14 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>Wandrer Route Builder</title>
-  <meta name="description" content="Build bike loops that maximize new Wandrer roads.">
+  <meta name="description" content="Build bike routes that maximize new Wandrer roads.">
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Overpass:wght@400;600;800&display=swap" rel="stylesheet">
   <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.css">
   <!-- bump APP_VERSION and the ?v= tags on every release so browsers fetch fresh files -->
-  <script>window.APP_VERSION = "27";</script>
-  <link rel="stylesheet" href="css/style.css?v=27">
+  <script>window.APP_VERSION = "28";</script>
+  <link rel="stylesheet" href="css/style.css?v=28">
 </head>
 <body>
   <main class="layout">
@@ -75,6 +75,13 @@
           <button class="btn btn-quiet btn-small" id="set-start" type="button">Set start</button>
         </div>
         <div class="plan-row">
+          <div><span class="plan-k">End</span><span class="plan-v" id="end-label">Back at start (loop)</span></div>
+          <div class="btn-pair">
+            <button class="btn btn-quiet btn-small" id="set-end" type="button">Set end</button>
+            <button class="btn btn-quiet btn-small" id="clear-end" type="button" disabled>Clear</button>
+          </div>
+        </div>
+        <div class="plan-row">
           <div><span class="plan-k">Area</span><span class="plan-v" id="area-label">Not drawn</span></div>
           <div class="btn-pair">
             <button class="btn btn-quiet btn-small" id="draw-shape" type="button">Draw</button>
@@ -120,7 +127,7 @@
         <div id="route-result" hidden>
           <div class="readout">
             <span class="readout-num" id="route-total">0.0</span>
-            <span class="readout-unit">mi loop</span>
+            <span class="readout-unit" id="route-unit">mi loop</span>
           </div>
           <dl class="facts">
             <div><dt>New road</dt><dd id="route-new">-</dd></div>
@@ -166,11 +173,11 @@
 
   <script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.js"></script>
   <script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
-  <script src="js/store.js?v=27"></script>
-  <script src="js/kmz.js?v=27"></script>
-  <script src="js/osm.js?v=27"></script>
-  <script src="js/gpx.js?v=27"></script>
-  <script src="js/plan.js?v=27"></script>
-  <script src="js/app.js?v=27"></script>
+  <script src="js/store.js?v=28"></script>
+  <script src="js/kmz.js?v=28"></script>
+  <script src="js/osm.js?v=28"></script>
+  <script src="js/gpx.js?v=28"></script>
+  <script src="js/plan.js?v=28"></script>
+  <script src="js/app.js?v=28"></script>
 </body>
 </html>

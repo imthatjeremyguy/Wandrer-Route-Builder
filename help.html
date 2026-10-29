@@ -27,6 +27,7 @@
         <li><a href="#area">Drawing and editing the area</a></li>
         <li><a href="#smooth">Smooth riding</a></li>
         <li><a href="#unpaved">Skip unpaved roads</a></li>
+        <li><a href="#end">Point-to-point rides</a></li>
         <li><a href="#goals">Goal</a></li>
         <li><a href="#stats">Route stats</a></li>
         <li><a href="#optimize">Optimize</a></li>
@@ -45,11 +46,12 @@
           <li><strong>Export your Wandrer map.</strong> On the Wandrer Big Map, zoom to the area you want, click <em>Download</em>, choose <em>KML/KMZ</em> and <em>Bike</em>. Wandrer emails you the file.</li>
           <li><strong>Upload the KMZ.</strong> Click <em>Upload KMZ</em> or drag the file onto the page. Your untraveled roads appear in red, and the road network loads on its own.</li>
           <li><strong>Set your start.</strong> Click <em>Set start</em>, then click the map. Drag the S marker to fine tune it.</li>
+          <li><strong>Set an end (optional).</strong> For a one-way ride, click <em>Set end</em> and click the map. Leave it empty for a loop back to the start. See <a href="#end">Point-to-point rides</a>.</li>
           <li><strong>Draw an area (optional for some goals).</strong> Click <em>Draw</em> and click corners around the roads you want to collect. See <a href="#area">drawing and editing</a>.</li>
           <li><strong>Pick a Smooth riding setting.</strong> <em>Some</em> is a good default. See <a href="#smooth">what the settings mean</a>.</li>
           <li><strong>Pick a goal.</strong> Collect everything in the area, fit a ride distance, or hit a number of new miles. See <a href="#goals">goals</a>.</li>
-          <li><strong>Build the route.</strong> The loop leaves your start, rides the new roads in the area, and comes back.</li>
-          <li><strong>Optimize (optional).</strong> Lets the solver spend 10 to 60 seconds looking for a better loop.</li>
+          <li><strong>Build the route.</strong> The route leaves your start, rides the new roads, and comes back (or finishes at your end point).</li>
+          <li><strong>Optimize (optional).</strong> Lets the solver spend 10 to 60 seconds looking for a better route.</li>
           <li><strong>Download GPX</strong> and import it into Strava, RideWithGPS or Garmin Connect.</li>
         </ol>
         <p class="note">Your start, area and settings are remembered in this browser, so next time you can upload a fresh KMZ and press <em>Build route</em>.</p>
@@ -140,9 +142,20 @@
         <p>Turn it off on a gravel or hybrid bike to go after every new road, paved or not. OpenStreetMap surface tags aren't complete, so an untagged gravel road can still slip in as paved.</p>
       </section>
 
+      <section id="end">
+        <h2>Point-to-point rides</h2>
+        <p>Set an end point when the ride shouldn't finish where it started: riding to work, to a friend's house, or to where someone picks you up.</p>
+        <ul>
+          <li>Click <em>Set end</em>, then click the map. Drag the E marker to fine tune it. <em>Clear</em> goes back to a loop.</li>
+          <li>Every goal works the same way, just from start to end instead of back to the start. <em>Max ride distance</em> and <em>Max ride</em> include getting from start to end, so they must be longer than that trip.</li>
+          <li>With no area drawn, new roads are considered when going from start to them to end in a straight line fits the distance: an oval around both points instead of a circle around the start.</li>
+          <li>The readout says <em>mi ride</em> instead of <em>mi loop</em>, and the GPX finishes at the end point.</li>
+        </ul>
+      </section>
+
       <section id="goals">
         <h2>Goal</h2>
-        <p>The goal decides which new roads go into the loop. Every goal starts and ends at your start point.</p>
+        <p>The goal decides which new roads go into the route. Every goal finishes back at your start, unless you set an <a href="#end">end point</a>.</p>
         <div class="table-wrap">
           <table>
             <thead><tr><th scope="col">Goal</th><th scope="col">What you get</th><th scope="col">Area</th></tr></thead>
@@ -155,7 +168,7 @@
         </div>
         <h3>Without an area</h3>
         <ul>
-          <li><strong>Max ride distance:</strong> every new road within half the ride distance of your start is considered, since a loop can't reach farther than that.</li>
+          <li><strong>Max ride distance:</strong> for a loop, every new road within half the ride distance of your start is considered, since a loop can't reach farther than that. With an end point, it's the oval described in <a href="#end">Point-to-point rides</a>.</li>
           <li><strong>New miles target:</strong> the solver looks around your start until it finds comfortably more new road than you asked for, then picks the best of it.</li>
           <li>Draw an area when you want to keep the ride to one neighborhood or route around a part of town.</li>
         </ul>
@@ -172,7 +185,7 @@
       <section id="stats">
         <h2>Route stats</h2>
         <dl class="defs">
-          <dt>mi loop</dt><dd>Total ride distance, start to finish.</dd>
+          <dt>mi loop / mi ride</dt><dd>Total ride distance, start to finish.</dd>
           <dt>New road</dt><dd>Miles of untraveled road the route collects, including any it happens to ride outside the area on the way in or out.</dd>
           <dt>Ride that's new</dt><dd>New road as a share of the whole ride. Higher is more efficient.</dd>
           <dt>Ridden twice</dt><dd>Miles of road the route rides more than once.</dd>
@@ -228,8 +241,7 @@
           <li>One-way streets are always ridden in the legal direction.</li>
           <li>Stretches with less than 15 m of new road are ignored. They aren't worth a detour.</li>
           <li>Near the state line, roads on the other side can't be used as connectors yet.</li>
-          <li>Routes are loops from your start. Point-to-point routes are coming.</li>
-          <li>The goal searches are strong heuristics, not a guarantee of the single best possible loop.</li>
+          <li>The goal searches are strong heuristics, not a guarantee of the single best possible route.</li>
         </ul>
       </section>
     </main>
