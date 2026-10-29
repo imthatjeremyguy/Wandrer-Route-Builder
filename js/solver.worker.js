@@ -34,18 +34,30 @@ self.onmessage = (e) => {
     else if (m.type === "solve") {
       if (OPT) OPT.stop = true;
       const t0 = performance.now();
-      const goal = m.goal || (m.budgetM > 0 ? { type: "distance", distanceM: m.budgetM } : { type: "all" });
+      let goal = m.goal || (m.budgetM > 0 ? { type: "distance", distanceM: m.budgetM } : { type: "all" });
+      // easy A to B: an end point but no area or goal number -> the most new road within
+      // 1.5x the direct trip (straight line x 1.4 as a generous guess at the road distance)
+      const easy = m.end && !m.ring && goal.type === "all";
+      if (easy) {
+        const c = Math.cos(m.start[1] * Math.PI / 180), MPD = 111195.08;
+        const line = Math.hypot((m.end[0] - m.start[0]) * c * MPD, (m.end[1] - m.start[1]) * MPD);
+        goal = { type: "distance", distanceM: Math.max(1.5 * 1.4 * line, line + 3000), easy: true };
+      }
       let area;
       if (m.ring) area = { ring: m.ring };
-      else if (goal.type === "distance") area = { reachM: goal.distanceM };     // a ride can't reach farther
+      else if (goal.type === "distance") area = { reachM: goal.distanceM, allowEmpty: easy };   // a ride can't reach farther
       else if (goal.type === "newmiles") area = { reachM: reachForNew(m.start, m.end, goal.newM, goal.capM, !!m.style?.skipUnpaved) };
       else throw new Error("Draw an area, or choose a goal so the route knows how far to go.");
       const G = prepare(m.start, area, m.style || { repeat: m.penalty ?? 0.5, turn: 0, uturn: 0 }, m.end || null);
+      if (easy) goal.distanceM = Math.max(1.5 * G.directM, G.directM + 1609);   // now that the road trip is known
       const capOf = goal.type === "distance" ? goal.distanceM : goal.capM || 0;
       if (G.end !== G.start && capOf && G.directM > capOf)
         throw new Error(`The end is ${(G.directM / 1609.344).toFixed(1)} mi from the start by road, more than your ${(capOf / 1609.344).toFixed(1)} mi max. Raise it or move the end.`);
       let r;
-      if (goal.type === "distance") ({ C: CTX, r } = solveBudget(G, goal.distanceM));
+      const direct = () => { CTX = withRoads(G, []); r = attempt(CTX, null); };
+      if (easy && !G.reqReach.length) direct();          // nothing new nearby: just the trip
+      else if (easy) { try { ({ C: CTX, r } = solveBudget(G, goal.distanceM)); } catch (err) { direct(); } }
+      else if (goal.type === "distance") ({ C: CTX, r } = solveBudget(G, goal.distanceM));
       else if (goal.type === "newmiles") ({ C: CTX, r } = solveTarget(G, goal.newM, goal.capM || 0));
       else { CTX = withRoads(G, G.reqReach); r = attempt(CTX, null); }
       CTX.goal = { ...goal, ...(CTX.goal || {}) };
@@ -258,7 +270,7 @@ function prepare(startLonLat, area, style, endLonLat = null) {
   if (!reqAll.length && end !== start && area.reachM &&
       Math.hypot((tx - sx) * cosS * MPD, (ty - sy) * MPD) >= area.reachM * 0.95)
     throw new Error("The end is too far from the start for that distance. Raise it or move the end closer.");
-  if (!reqAll.length) throw new Error(area.ring ? "No new roads inside that area. Draw around some red roads."
+  if (!reqAll.length && !area.allowEmpty) throw new Error(area.ring ? "No new roads inside that area. Draw around some red roads."
     : "No new roads within reach of the start. Move the start or raise the distance.");
   // keep new roads the start can reach and that can still get to the end
   SD.run([start]); const fwd = Float64Array.from({ length: n }, (_, x) => SD.d(x));
@@ -267,7 +279,7 @@ function prepare(startLonLat, area, style, endLonLat = null) {
   const directM = end === start ? 0 : pathLen(SD, start, end, edges);
   const req = reqAll.filter(i => [edges[i].u, edges[i].v].every(x => fwd[x] < Infinity && back[x] < Infinity));
   const dropped = reqAll.length - req.length;
-  if (!req.length) throw new Error("The new roads there can't be reached from the start.");
+  if (!req.length && !area.allowEmpty) throw new Error("The new roads there can't be reached from the start.");
   // round-trip cost from the start to reach each new road (orders roads for a distance budget)
   const rt = new Map(req.map(i => {
     const ed = edges[i];
@@ -347,6 +359,13 @@ function withRoads(G, req) {
       return list.length >= K_NEAR || d > NEAR_CAP_M || nearEnough(list, d);
     });
     dCand.set(s, list);
+  }
+  // point to point: the start must be able to send one unit of flow all the way to the end,
+  // usually far past its nearby candidates; give the balancer that option directly
+  if (end !== start) {
+    SD.run([start], x => x === end);
+    const l = dCand.get(start);
+    if (!l.some(([x]) => x === end)) l.push([end, SD.d(end)]);
   }
 
   return { ...G, req, base, odd, uCand, uDist, M, dCand, newAvail, pathU: new Map(), pathD: new Map() };
@@ -975,6 +994,7 @@ function balance(C, arcs, full) {
     let bestT = -1;
     for (let j = 0; j < nT; j++) if (demand[j] > 0 && dist[nS + j] < Infinity && (bestT < 0 || dist[nS + j] < dist[nS + bestT])) bestT = j;
     if (bestT < 0) {
+      if (!demand.some(v => v > 0)) break;   // all balanced: done
       // nearby candidates weren't enough: start over with full searches (keeps the flow optimal)
       if (!full) return balance(C, arcs, true);
       break;

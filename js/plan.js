@@ -228,7 +228,7 @@
     const g = $("goal").value;
     if (g === "distance" && !num("budget")) return "Enter a ride distance.";
     if (g === "newmiles" && !num("target-new")) return "Enter how many new miles you want.";
-    if (g === "all" && !area) return "Draw an area, or pick a Max ride distance or New miles target goal.";
+    if (g === "all" && !area && !end) return "Draw an area, set an end point, or pick a Max ride distance or New miles target goal.";
     return "";
   }
   function showGoalFields() {
@@ -238,7 +238,7 @@
   }
 
   function refresh() {
-    const optional = $("goal").value !== "all";
+    const optional = $("goal").value !== "all" || !!end;
     $("area-label").textContent = area ? `${fmtMi(areaNewMiles())} new mi inside` : optional ? "Optional" : "Not drawn";
     $("draw-shape").textContent = area ? "Redraw" : "Draw";
     $("clear-area").disabled = !area;
@@ -338,7 +338,11 @@
     const notes = [];
     const g = r.goal || {}, where = r.hasArea ? "in the area" : "within reach";
     const faded = r.skipped && r.skipped.length ? " Faded red roads were left out." : "";
-    if (g.type === "distance") {
+    if (g.easy) {
+      notes.push(r.newM > 0
+        ? `A to B with a few new roads: ${fmtMi(r.newM)} new mi, staying within 1.5x the direct trip (${fmtMi(r.directM)} mi). Pick a goal or draw an area for more.`
+        : `No new roads fit within 1.5x the direct trip, so this is the direct ride. Pick a goal or draw an area for more.`);
+    } else if (g.type === "distance") {
       notes.push(`Fits your ${fmtMi(g.distanceM)} mi ride: ${fmtMi(r.newM)} new mi collected, of ${fmtMi(r.areaNewM)} ${where}.${faded}`);
     } else if (g.type === "newmiles") {
       if (g.met) notes.push(`Shortest ${r.p2p ? "ride" : "loop"} found with ${fmtMi(g.newM)}+ new mi: collects ${fmtMi(r.newM)} new mi.${faded}`);
