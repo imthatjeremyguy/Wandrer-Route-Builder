@@ -22,7 +22,7 @@
         .addTo(map).on("dragend", e => setStart(e.target.getLatLng()));
     } else startMarker.setLatLng(latlng);
     $("start-label").textContent = `${latlng.lat.toFixed(4)}, ${latlng.lng.toFixed(4)}`;
-    $("set-start").textContent = "Move start";
+    $("set-start").textContent = "Move"; $("clear-start").disabled = false;
     if (save) Store.set("start", start);
     clearRoute(); refresh();
   }
@@ -36,9 +36,23 @@
       if (rideMode === "ab") endMarker.addTo(map);
     } else endMarker.setLatLng(latlng);
     $("end-label").textContent = `${latlng.lat.toFixed(4)}, ${latlng.lng.toFixed(4)}`;
-    $("set-end").textContent = "Move end";
+    $("set-end").textContent = "Move"; $("clear-end").disabled = false;
     if (save) Store.set("end", end);
     clearRoute(); refresh();
+  }
+  function clearStart() {
+    cancelMode();
+    if (startMarker) { map.removeLayer(startMarker); startMarker = null; }
+    start = null; Store.del("start");
+    $("start-label").textContent = "Not set"; $("set-start").textContent = "Set"; $("clear-start").disabled = true;
+    clearRoute(); refresh(); say("");
+  }
+  function clearEnd() {
+    cancelMode();
+    if (endMarker) { map.removeLayer(endMarker); endMarker = null; }
+    end = null; Store.del("end");
+    $("end-label").textContent = "Not set"; $("set-end").textContent = "Set"; $("clear-end").disabled = true;
+    clearRoute(); refresh(); say("");
   }
   function pickEnd() {
     cancelMode();
@@ -445,6 +459,8 @@
       map = m;
       $("set-start").addEventListener("click", pickStart);
       $("set-end").addEventListener("click", pickEnd);
+      $("clear-start").addEventListener("click", clearStart);
+      $("clear-end").addEventListener("click", clearEnd);
       document.querySelectorAll('input[name="ride-mode"]').forEach(r => r.addEventListener("change", e => setRideMode(e.target.value)));
       $("draw-shape").addEventListener("click", drawShape);
       $("clear-area").addEventListener("click", clearArea);

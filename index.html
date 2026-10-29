@@ -10,8 +10,8 @@
   <link href="https://fonts.googleapis.com/css2?family=Overpass:wght@400;600;800&display=swap" rel="stylesheet">
   <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.css">
   <!-- bump APP_VERSION and the ?v= tags on every release so browsers fetch fresh files -->
-  <script>window.APP_VERSION = "28";</script>
-  <link rel="stylesheet" href="css/style.css?v=28">
+  <script>window.APP_VERSION = "29";</script>
+  <link rel="stylesheet" href="css/style.css?v=29">
 </head>
 <body>
   <main class="layout">
@@ -76,11 +76,17 @@
         </div>
         <div class="plan-row">
           <div><span class="plan-k">Start</span><span class="plan-v" id="start-label">Not set</span></div>
-          <button class="btn btn-quiet btn-small" id="set-start" type="button">Set start</button>
+          <div class="btn-pair">
+            <button class="btn btn-quiet btn-small" id="set-start" type="button">Set</button>
+            <button class="btn btn-quiet btn-small" id="clear-start" type="button" disabled>Clear</button>
+          </div>
         </div>
         <div class="plan-row ab-only">
           <div><span class="plan-k">End</span><span class="plan-v" id="end-label">Not set</span></div>
-          <button class="btn btn-quiet btn-small" id="set-end" type="button">Set end</button>
+          <div class="btn-pair">
+            <button class="btn btn-quiet btn-small" id="set-end" type="button">Set</button>
+            <button class="btn btn-quiet btn-small" id="clear-end" type="button" disabled>Clear</button>
+          </div>
         </div>
         <div class="plan-row loop-only">
           <div><span class="plan-k">Area</span><span class="plan-v" id="area-label">Not drawn</span></div>
@@ -179,11 +185,11 @@
 
   <script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.js"></script>
   <script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
-  <script src="js/store.js?v=28"></script>
-  <script src="js/kmz.js?v=28"></script>
-  <script src="js/osm.js?v=28"></script>
-  <script src="js/gpx.js?v=28"></script>
-  <script src="js/plan.js?v=28"></script>
-  <script src="js/app.js?v=28"></script>
+  <script src="js/store.js?v=29"></script>
+  <script src="js/kmz.js?v=29"></script>
+  <script src="js/osm.js?v=29"></script>
+  <script src="js/gpx.js?v=29"></script>
+  <script src="js/plan.js?v=29"></script>
+  <script src="js/app.js?v=29"></script>
 </body>
 </html>
