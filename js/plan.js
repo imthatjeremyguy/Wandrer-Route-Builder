@@ -324,7 +324,7 @@
     }
     setBusy(true);
     say("Building route...");
-    abWorker.postMessage({ type: "route", start, end,
+    abWorker.postMessage({ type: "route", start, end, distanceM: num("ab-budget") * 1609.344,
       style: { ...(STYLES[$("repeat-penalty").value] || STYLES.some), skipUnpaved: $("skip-unpaved").checked } });
   }
 
@@ -366,7 +366,8 @@
     if (!keepView) $("route-result").scrollIntoView({ block: "nearest", behavior: matchMedia("(prefers-reduced-motion: reduce)").matches ? "auto" : "smooth" });
     const notes = [];
     if (r.mode === "ab") {
-      notes.push(`Best plain route from A to B. It happens to cover ${fmtMi(r.newM)} new mi.`);
+      notes.push(`Most direct route from A to B. It happens to cover ${fmtMi(r.newM)} new mi.`);
+      if (r.distanceM) notes.push(`Collecting new roads within your ${fmtMi(r.distanceM)} mi is the next piece being built; for now this is the direct route.`);
       if (r.unpavedM >= 16) notes.push(`Includes ${fmtMi(r.unpavedM)} mi of unpaved road${$("skip-unpaved").checked ? " (no paved way round)" : ""}.`);
       const far = Math.max(r.snapAM, r.snapBM);
       if (far > 150) notes.push(`${r.snapAM >= r.snapBM ? "A" : "B"} is ${Math.round(far)} m from the nearest rideable junction; the route starts or ends there.`);
@@ -489,6 +490,11 @@
       $("clear-start").addEventListener("click", clearStart);
       $("clear-end").addEventListener("click", clearEnd);
       $("build-ab").addEventListener("click", buildAB);
+      Store.get("ab-budget").then(v => { if (v) $("ab-budget").value = v; });
+      $("ab-budget").addEventListener("change", e => {
+        if (!(parseFloat(e.target.value) > 0)) e.target.value = "";
+        Store.set("ab-budget", e.target.value); clearRoute(); say("");
+      });
       document.querySelectorAll('input[name="ride-mode"]').forEach(r => r.addEventListener("change", e => setRideMode(e.target.value)));
       $("draw-shape").addEventListener("click", drawShape);
       $("clear-area").addEventListener("click", clearArea);

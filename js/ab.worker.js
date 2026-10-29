@@ -7,7 +7,8 @@
  * The search runs on arcs (a road ridden in one direction), so the cost of each turn is exact.
  *
  * in:  {type:"network", nodes, edges}
- *      {type:"route", start:[lon,lat], end:[lon,lat], style:{turn, uturn, skipUnpaved}}
+ *      {type:"route", start:[lon,lat], end:[lon,lat], style:{turn, uturn, skipUnpaved}, distanceM?}
+ *      distanceM: ride distance (0 or missing = most direct route)
  * out: {progress} | {error} | {result, final:true}
  */
 const UNPAVED_W = 5;                    // same weighting as Loop
@@ -17,6 +18,7 @@ const MPD = 111195.08;                  // metres per degree of latitude
 
 let NET = null;   // { nodes, edges, outArcs, hStart, hEnd }
 const say = msg => self.postMessage({ progress: msg });
+const mi = m => (Math.ceil(m / 160.9344) / 10).toFixed(1);   // rounded up, so "at least" is honest
 
 self.onmessage = e => {
   const m = e.data;
@@ -25,6 +27,9 @@ self.onmessage = e => {
     else if (m.type === "route") {
       const t0 = performance.now();
       const r = route(m.start, m.end, m.style || {});
+      if (m.distanceM > 0 && m.distanceM < r.totalM - 1)
+        throw new Error(`The most direct route from A to B is ${mi(r.totalM)} mi. Set Ride distance to at least that, or leave it blank.`);
+      r.distanceM = m.distanceM > 0 ? m.distanceM : 0;
       r.ms = Math.round(performance.now() - t0);
       self.postMessage({ result: r, final: true });
     }
