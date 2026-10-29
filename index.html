@@ -10,8 +10,8 @@
   <link href="https://fonts.googleapis.com/css2?family=Overpass:wght@400;600;800&display=swap" rel="stylesheet">
   <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.css">
   <!-- bump APP_VERSION and the ?v= tags on every release so browsers fetch fresh files -->
-  <script>window.APP_VERSION = "27";</script>
-  <link rel="stylesheet" href="css/style.css?v=27">
+  <script>window.APP_VERSION = "28";</script>
+  <link rel="stylesheet" href="css/style.css?v=28">
 </head>
 <body>
   <main class="layout">
@@ -70,18 +70,26 @@
 
       <section class="step" id="step-plan" hidden>
         <h2>Plan a ride</h2>
+        <div class="mode-toggle" role="radiogroup" aria-label="Ride type">
+          <label><input type="radio" name="ride-mode" value="loop" checked><span>Loop</span></label>
+          <label><input type="radio" name="ride-mode" value="ab"><span>A to B</span></label>
+        </div>
         <div class="plan-row">
           <div><span class="plan-k">Start</span><span class="plan-v" id="start-label">Not set</span></div>
           <button class="btn btn-quiet btn-small" id="set-start" type="button">Set start</button>
         </div>
-        <div class="plan-row">
+        <div class="plan-row ab-only">
+          <div><span class="plan-k">End</span><span class="plan-v" id="end-label">Not set</span></div>
+          <button class="btn btn-quiet btn-small" id="set-end" type="button">Set end</button>
+        </div>
+        <div class="plan-row loop-only">
           <div><span class="plan-k">Area</span><span class="plan-v" id="area-label">Not drawn</span></div>
           <div class="btn-pair">
             <button class="btn btn-quiet btn-small" id="draw-shape" type="button">Draw</button>
             <button class="btn btn-quiet btn-small" id="clear-area" type="button" disabled>Clear</button>
           </div>
         </div>
-        <div class="btn-row" id="shape-tools" hidden>
+        <div class="btn-row loop-only" id="shape-tools" hidden>
           <button class="btn btn-quiet btn-small" id="undo-corner" type="button">Undo corner</button>
           <button class="btn btn-small" id="finish-shape" type="button">Finish shape</button>
         </div>
@@ -96,7 +104,7 @@
         </label>
         <label class="check check-plan"><input type="checkbox" id="skip-unpaved" checked> Skip unpaved roads
           <a class="what" href="help.html#unpaved" target="_blank" rel="noopener" aria-label="What does Skip unpaved do?">?</a></label>
-        <label class="field">
+        <label class="field loop-only">
           <span class="plan-k">Goal
             <a class="what" href="help.html#goals" target="_blank" rel="noopener" aria-label="What do the goals mean?">?</a></span>
           <select id="goal">
@@ -105,19 +113,24 @@
             <option value="newmiles">New miles target</option>
           </select>
         </label>
-        <div class="goal-fields" id="goal-distance" hidden>
+        <div class="goal-fields loop-only" id="goal-distance" hidden>
           <label class="num-row"><span class="num-k">Ride distance</span>
             <input type="number" id="budget" min="1" step="1" inputmode="decimal" placeholder="25"><span>mi</span></label>
         </div>
-        <div class="goal-fields" id="goal-newmiles" hidden>
+        <div class="goal-fields loop-only" id="goal-newmiles" hidden>
           <label class="num-row"><span class="num-k">New miles</span>
             <input type="number" id="target-new" min="0.5" step="0.5" inputmode="decimal" placeholder="10"><span>mi</span></label>
           <label class="num-row"><span class="num-k">Max ride</span>
             <input type="number" id="target-cap" min="1" step="1" inputmode="decimal" placeholder="Any"><span>mi</span></label>
         </div>
-        <button class="btn" id="build-route" type="button" disabled>Build route</button>
+        <button class="btn loop-only" id="build-route" type="button" disabled>Build route</button>
 
-        <div id="route-result" hidden>
+        <div class="ab-only" id="ab-panel">
+          <button class="btn" id="build-ab" type="button" disabled>Build A to B route</button>
+          <p class="ab-note">A to B routing is being built one piece at a time. You can set your start and end now.</p>
+        </div>
+
+        <div class="loop-only" id="route-result" hidden>
           <div class="readout">
             <span class="readout-num" id="route-total">0.0</span>
             <span class="readout-unit">mi loop</span>
@@ -166,11 +179,11 @@
 
   <script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.js"></script>
   <script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
-  <script src="js/store.js?v=27"></script>
-  <script src="js/kmz.js?v=27"></script>
-  <script src="js/osm.js?v=27"></script>
-  <script src="js/gpx.js?v=27"></script>
-  <script src="js/plan.js?v=27"></script>
-  <script src="js/app.js?v=27"></script>
+  <script src="js/store.js?v=28"></script>
+  <script src="js/kmz.js?v=28"></script>
+  <script src="js/osm.js?v=28"></script>
+  <script src="js/gpx.js?v=28"></script>
+  <script src="js/plan.js?v=28"></script>
+  <script src="js/app.js?v=28"></script>
 </body>
 </html>

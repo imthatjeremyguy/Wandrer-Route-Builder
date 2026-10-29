@@ -132,6 +132,18 @@ select {
 select:focus-visible { outline: 3px solid var(--paint); outline-offset: 2px; }
 .goal-fields { margin: -4px 0 12px; }
 .check-plan { margin: -2px 0 14px; font-size: 0.95rem; }
+/* ride type: Loop and A to B each show only their own controls */
+.mode-toggle { display: grid; grid-template-columns: 1fr 1fr; margin: 0 0 14px; border: 2px solid var(--sign-ink); border-radius: 6px; overflow: hidden; }
+.mode-toggle label { cursor: pointer; }
+.mode-toggle input { position: absolute; opacity: 0; pointer-events: none; }
+.mode-toggle span { display: block; text-align: center; padding: 7px 8px 5px; font-weight: 600; color: var(--sign-ink); }
+.mode-toggle input:checked + span { background: var(--sign-ink); color: var(--sign); }
+.mode-toggle label:hover input:not(:checked) + span { background: var(--sign-deep); }
+.mode-toggle input:focus-visible + span { outline: 3px solid var(--paint); outline-offset: -3px; }
+#step-plan.mode-ab .loop-only, #step-plan:not(.mode-ab) .ab-only { display: none !important; }
+#build-ab { width: 100%; margin: 4px 0 10px; }
+.ab-note { font-size: 0.9rem; }
+.start-pin.end-pin span { background: #fff; color: var(--sign); border-color: var(--sign); }
 .num-row { display: grid; grid-template-columns: 7.5em 7em auto; align-items: center; gap: 8px; margin-bottom: 8px; color: var(--sign-ink-soft); }
 .num-k { font-size: 0.9rem; }
 .num-row input {

@@ -6,6 +6,9 @@
 
   let map, network = null, worker = null, start = null, area = null, route = null;
   let startMarker = null, areaRect = null, routeLine = null, playDot = null, playTimer = null, mode = null;
+  // ride type: "loop" (the loop solver) or "ab" (A to B, its own logic, being built)
+  let rideMode = "loop", end = null, endMarker = null;
+  const pinIcon = (letter, cls = "") => L.divIcon({ className: "start-pin " + cls, html: `<span>${letter}</span>`, iconSize: [28, 28], iconAnchor: [14, 14] });
 
   function say(text, isError) { $("plan-msg").textContent = text || ""; $("plan-msg").classList.toggle("error", !!isError); }
   const fmtMi = m => (m * M2MI).toFixed(1);
@@ -15,13 +18,49 @@
     start = [latlng.lng, latlng.lat];
     if (!startMarker) {
       startMarker = L.marker(latlng, { draggable: true, title: "Start", keyboard: true,
-        icon: L.divIcon({ className: "start-pin", html: "<span>S</span>", iconSize: [28, 28], iconAnchor: [14, 14] }) })
+        icon: pinIcon(rideMode === "ab" ? "A" : "S") })
         .addTo(map).on("dragend", e => setStart(e.target.getLatLng()));
     } else startMarker.setLatLng(latlng);
     $("start-label").textContent = `${latlng.lat.toFixed(4)}, ${latlng.lng.toFixed(4)}`;
     $("set-start").textContent = "Move start";
     if (save) Store.set("start", start);
     clearRoute(); refresh();
+  }
+
+  // ---------- end point (A to B only) ----------
+  function setEnd(latlng, save = true) {
+    end = [latlng.lng, latlng.lat];
+    if (!endMarker) {
+      endMarker = L.marker(latlng, { draggable: true, title: "End", keyboard: true, icon: pinIcon("B", "end-pin") })
+        .on("dragend", e => setEnd(e.target.getLatLng()));
+      if (rideMode === "ab") endMarker.addTo(map);
+    } else endMarker.setLatLng(latlng);
+    $("end-label").textContent = `${latlng.lat.toFixed(4)}, ${latlng.lng.toFixed(4)}`;
+    $("set-end").textContent = "Move end";
+    if (save) Store.set("end", end);
+    clearRoute(); refresh();
+  }
+  function pickEnd() {
+    cancelMode();
+    mode = "end"; map.getContainer().classList.add("picking");
+    say("Click the map where your ride ends.");
+    map.once("click", e => { cancelMode(); setEnd(e.latlng); say(""); });
+  }
+
+  /** Switch ride type. Each type shows only its own controls and map layers. */
+  function setRideMode(m, save = true) {
+    rideMode = m === "ab" ? "ab" : "loop";
+    const ab = rideMode === "ab";
+    cancelMode(); clearRoute(); say("");
+    $("step-plan").classList.toggle("mode-ab", ab);
+    document.querySelector(`input[name="ride-mode"][value="${rideMode}"]`).checked = true;
+    if (startMarker) startMarker.setIcon(pinIcon(ab ? "A" : "S"));
+    if (endMarker) { if (ab) endMarker.addTo(map); else map.removeLayer(endMarker); }
+    // the area belongs to Loop
+    if (areaRect) { if (ab) map.removeLayer(areaRect); else areaRect.addTo(map); }
+    if (ab) { if (handles) { map.removeLayer(handles); handles = null; } } else drawHandles();
+    if (save) Store.set("ride-mode", rideMode);
+    refresh();
   }
 
   function pickStart() {
@@ -37,7 +76,7 @@
 
   function setArea(ring, save = true) {
     area = ring;
-    if (!areaRect) areaRect = L.polygon(toLatLngs(ring), AREA_STYLE).addTo(map);
+    if (!areaRect) { areaRect = L.polygon(toLatLngs(ring), AREA_STYLE); if (rideMode !== "ab") areaRect.addTo(map); }
     else areaRect.setLatLngs(toLatLngs(ring));
     if (save) Store.set("area", area);
     clearRoute(); refresh();
@@ -53,7 +92,7 @@
   };
   function drawHandles() {
     if (handles) { map.removeLayer(handles); handles = null; }
-    if (!area) return;
+    if (!area || rideMode === "ab") return;
     handles = L.layerGroup().addTo(map);
     const live = () => area.map(([x, y]) => L.latLng(y, x));
     area.forEach(([x, y], i) => {
@@ -163,7 +202,7 @@
 
   function cancelMode() {
     if (cancelMode.fn) cancelMode.fn();
-    if (mode === "start") map.off("click");
+    if (mode === "start" || mode === "end") map.off("click");
     map.getContainer().classList.remove("picking");
     mode = null;
   }
@@ -405,6 +444,8 @@
     init(m) {
       map = m;
       $("set-start").addEventListener("click", pickStart);
+      $("set-end").addEventListener("click", pickEnd);
+      document.querySelectorAll('input[name="ride-mode"]').forEach(r => r.addEventListener("change", e => setRideMode(e.target.value)));
       $("draw-shape").addEventListener("click", drawShape);
       $("clear-area").addEventListener("click", clearArea);
       $("build-route").addEventListener("click", build);
@@ -441,6 +482,8 @@
         if (typeof a[0] === "number") { const [w, s, e, n] = a; a = [[w, s], [e, s], [e, n], [w, n]]; }
         setArea(a, false);
       });
+      Store.get("end").then(p => { if (p) setEnd(L.latLng(p[1], p[0]), false); });
+      Store.get("ride-mode").then(v => { if (v === "ab") setRideMode("ab", false); });
     },
     setNetwork(net) {
       network = net;
