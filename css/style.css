@@ -143,6 +143,7 @@ select:focus-visible { outline: 3px solid var(--paint); outline-offset: 2px; }
 .opt-row { display: flex; align-items: center; gap: 10px; margin-bottom: 12px; }
 .opt-secs { display: flex; align-items: center; gap: 6px; color: var(--sign-ink-soft); font-size: 0.9rem; }
 #build-route { margin: 4px 0 16px; width: 100%; }
+.step p.build-hint { margin: -10px 0 14px; font-size: 0.85rem; color: var(--paint); }
 .btn-pair { display: flex; gap: 6px; }
 .btn-row { display: flex; gap: 10px; flex-wrap: wrap; }
 #route-result { margin-top: 4px; }

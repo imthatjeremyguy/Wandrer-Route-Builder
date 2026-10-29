@@ -220,9 +220,16 @@
                                                        capM: num("target-cap") * 1609.344 } : null;
     return { type: "all" };
   }
-  function canBuild() {
-    const g = goalSpec();
-    return !!(network && start && g && (g.type !== "all" || area));
+  function canBuild() { return !whyNot(); }
+  /** What's missing before a route can be built (shown under the button), or "" */
+  function whyNot() {
+    if (!network) return "Waiting for the road network to load.";
+    if (!start) return "Set a start point first.";
+    const g = $("goal").value;
+    if (g === "distance" && !num("budget")) return "Enter a ride distance.";
+    if (g === "newmiles" && !num("target-new")) return "Enter how many new miles you want.";
+    if (g === "all" && !area) return "Draw an area, or pick a Max ride distance or New miles target goal.";
+    return "";
   }
   function showGoalFields() {
     const g = $("goal").value;
@@ -236,6 +243,8 @@
     $("draw-shape").textContent = area ? "Redraw" : "Draw";
     $("clear-area").disabled = !area;
     $("build-route").disabled = !canBuild();
+    const why = whyNot();
+    $("build-hint").textContent = why; $("build-hint").hidden = !why;
   }
 
   // ---------- solve + optimize ----------

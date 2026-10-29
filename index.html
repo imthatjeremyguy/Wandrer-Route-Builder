@@ -10,8 +10,8 @@
   <link href="https://fonts.googleapis.com/css2?family=Overpass:wght@400;600;800&display=swap" rel="stylesheet">
   <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.css">
   <!-- bump APP_VERSION and the ?v= tags on every release so browsers fetch fresh files -->
-  <script>window.APP_VERSION = "28";</script>
-  <link rel="stylesheet" href="css/style.css?v=28">
+  <script>window.APP_VERSION = "29";</script>
+  <link rel="stylesheet" href="css/style.css?v=29">
 </head>
 <body>
   <main class="layout">
@@ -122,7 +122,8 @@
           <label class="num-row"><span class="num-k">Max ride</span>
             <input type="number" id="target-cap" min="1" step="1" inputmode="decimal" placeholder="Any"><span>mi</span></label>
         </div>
-        <button class="btn" id="build-route" type="button" disabled>Build route</button>
+        <button class="btn" id="build-route" type="button" disabled aria-describedby="build-hint">Build route</button>
+        <p class="build-hint" id="build-hint" hidden></p>
 
         <div id="route-result" hidden>
           <div class="readout">
@@ -173,11 +174,11 @@
 
   <script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.js"></script>
   <script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
-  <script src="js/store.js?v=28"></script>
-  <script src="js/kmz.js?v=28"></script>
-  <script src="js/osm.js?v=28"></script>
-  <script src="js/gpx.js?v=28"></script>
-  <script src="js/plan.js?v=28"></script>
-  <script src="js/app.js?v=28"></script>
+  <script src="js/store.js?v=29"></script>
+  <script src="js/kmz.js?v=29"></script>
+  <script src="js/osm.js?v=29"></script>
+  <script src="js/gpx.js?v=29"></script>
+  <script src="js/plan.js?v=29"></script>
+  <script src="js/app.js?v=29"></script>
 </body>
 </html>
