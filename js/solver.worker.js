@@ -19,6 +19,7 @@
  *   uturn   metres a U-turn costs; U-turns at intersections with another way
  *           out are replaced by a loop when the loop is cheaper than this
  */
+const EASY_DETOUR_M = 1600;   // easy A to B: a new road may add at most ~1 mi to the trip
 const UNPAVED_W = 5;   // Skip unpaved: a gravel connector counts as 5x its length
 const MIN_NEW_M = 15;      // a block needs at least this much new road to be worth riding
 const MARGIN_DEG = 0.02;   // ~2 km of extra roads around the area for detours
@@ -45,7 +46,7 @@ self.onmessage = (e) => {
       }
       let area;
       if (m.ring) area = { ring: m.ring };
-      else if (goal.type === "distance") area = { reachM: goal.distanceM, allowEmpty: easy };   // a ride can't reach farther
+      else if (goal.type === "distance") area = { reachM: goal.distanceM, allowEmpty: easy, maxDetourM: easy ? EASY_DETOUR_M : 0 };   // a ride can't reach farther
       else if (goal.type === "newmiles") area = { reachM: reachForNew(m.start, m.end, goal.newM, goal.capM, !!m.style?.skipUnpaved) };
       else throw new Error("Draw an area, or choose a goal so the route knows how far to go.");
       const G = prepare(m.start, area, m.style || { repeat: m.penalty ?? 0.5, turn: 0, uturn: 0 }, m.end || null);
@@ -277,8 +278,17 @@ function prepare(startLonLat, area, style, endLonLat = null) {
   SR.run([end]); const back = Float64Array.from({ length: n }, (_, x) => SR.d(x));
   if (fwd[end] === Infinity) throw new Error("There's no legal way from the start to the end. Move one of them.");
   const directM = end === start ? 0 : pathLen(SD, start, end, edges);
-  const req = reqAll.filter(i => [edges[i].u, edges[i].v].every(x => fwd[x] < Infinity && back[x] < Infinity));
+  let req = reqAll.filter(i => [edges[i].u, edges[i].v].every(x => fwd[x] < Infinity && back[x] < Infinity));
   const dropped = reqAll.length - req.length;
+  // easy A to B: only new roads close to the way (each one's detour beyond the direct trip is
+  // at most maxDetourM), so the ride picks things up as it goes instead of long side trips
+  if (area.maxDetourM && end !== start) {
+    const via = fwd[end];
+    req = req.filter(i => {
+      const ed = edges[i];
+      return Math.min(fwd[ed.u] + back[ed.v], fwd[ed.v] + back[ed.u]) + ed.w - via <= area.maxDetourM;
+    });
+  }
   if (!req.length && !area.allowEmpty) throw new Error("The new roads there can't be reached from the start.");
   // round-trip cost from the start to reach each new road (orders roads for a distance budget)
   const rt = new Map(req.map(i => {

@@ -340,8 +340,8 @@
     const faded = r.skipped && r.skipped.length ? " Faded red roads were left out." : "";
     if (g.easy) {
       notes.push(r.newM > 0
-        ? `A to B with a few new roads: ${fmtMi(r.newM)} new mi, staying within 1.5x the direct trip (${fmtMi(r.directM)} mi). Pick a goal or draw an area for more.`
-        : `No new roads fit within 1.5x the direct trip, so this is the direct ride. Pick a goal or draw an area for more.`);
+        ? `A to B with new roads along the way: ${fmtMi(r.newM)} new mi, no side trip over ~1 mi, within 1.5x the direct trip (${fmtMi(r.directM)} mi). Pick a goal or draw an area for more.`
+        : `No new roads close to the way, so this is the direct ride. Pick a goal or draw an area for more.`);
     } else if (g.type === "distance") {
       notes.push(`Fits your ${fmtMi(g.distanceM)} mi ride: ${fmtMi(r.newM)} new mi collected, of ${fmtMi(r.areaNewM)} ${where}.${faded}`);
     } else if (g.type === "newmiles") {
