@@ -258,11 +258,12 @@ function cover(A, B, req, style, tries = TRIES) {
   const want = x => (x === A || x === B ? 1 : 0);
   const odd = [...new Set([...deg.keys(), A, B])].filter(x => ((deg.get(x) || 0) & 1) !== want(x));
   const isOdd = new Set(odd), dist = new Map();
+  const wantOdd = Math.min(K_NEAR, odd.length - 1);
   const cand = odd.map(s => {
     const list = [];
     SS.run([s], "all", w, (x, d) => {
       if (x !== s && isOdd.has(x)) { list.push([x, d]); dist.set(s + ":" + x, d); }
-      return list.length >= K_NEAR || nearEnough(list, d);
+      return list.length >= wantOdd || nearEnough(list, d);
     });
     return list;
   });
@@ -305,13 +306,12 @@ function cover(A, B, req, style, tries = TRIES) {
     // nodes with bal < 0 need extra ways out; bal > 0 need extra ways in
     const needOut = [], needIn = new Map();
     for (const [x, v] of bal) { if (v < 0) for (let k = 0; k < -v; k++) needOut.push(x); else if (v > 0) needIn.set(x, v); }
-    const options = [];
+    const options = [], wantN = Math.min(K_NEAR, needIn.size);
     for (const s of new Set(needOut)) {
-      let found = 0;
       const mine = [];
       SS.run([s], "legal", w, (x, d) => {
-        if (x !== s && needIn.has(x)) { options.push([d, s, x]); mine.push([x, d]); found++; }
-        return found >= K_NEAR || nearEnough(mine, d);
+        if (x !== s && needIn.has(x)) { options.push([d, s, x]); mine.push([x, d]); }
+        return mine.length >= wantN || nearEnough(mine, d);
       });
     }
     options.sort((p, q) => p[0] - q[0]);
@@ -443,7 +443,8 @@ function eulerPath(items, A, B, directed, rng = null) {
  *          with the route builder (a few stringings) and kept only if it fits the distance */
 const MIN_NEW_M = 15;     // a block needs this much new road to be worth a detour (same as Loop)
 const CELL_DEG = 0.004;   // patch grid
-const PATCH_M = 600;      // rough detour to reach one more ~300 m patch (same idea as Loop)
+const PATCH_M = 600;
+const EXTEND_M = 1200;    // how far a street is followed past its patch to reach a natural end      // rough detour to reach one more ~300 m patch (same idea as Loop)
 
 function collect(A, B, D, directWalk, style, t0) {
   const { edges, nodes } = NET, n = nodes.length, skip = !!style.skipUnpaved;
@@ -467,6 +468,33 @@ function collect(A, B, D, directWalk, style, t0) {
     if (Math.min(via(ed.u), via(ed.v)) + ed.len <= D) pool.push(i);
   });
   const poolNewM = pool.reduce((s, i) => s + edges[i].newM, 0);
+  const inPool = new Uint8Array(edges.length); for (const i of pool) inPool[i] = 1;
+
+  /** Ride streets to a natural end: where a chosen street stops at a junction but carries straight on
+   *  as new road, follow it until the new road runs out or meets another chosen road (up to EXTEND_M). */
+  function extendStreets(req) {
+    const inReq = new Uint8Array(edges.length), deg = new Map();
+    const bump = x => deg.set(x, (deg.get(x) || 0) + 1);
+    for (const e of req) { inReq[e] = 1; bump(edges[e].u); bump(edges[e].v); }
+    const out = req.slice();
+    for (const e of req) for (const dir of [0, 1]) {
+      let arcIn = 2 * e + dir, x = toOf(edges, arcIn), ext = 0;
+      if (deg.get(x) !== 1) continue;            // not a loose end
+      for (;;) {
+        let next = -1;
+        for (let p = NET.allStart[x]; p < NET.allStart[x + 1]; p++) {
+          const b = NET.allArcs[p], be = edgeOf(b);
+          if (inPool[be] && !inReq[be] && turnAngle(arcIn, b) < TURN) { next = b; break; }
+        }
+        if (next < 0) break;
+        const be = edgeOf(next);
+        inReq[be] = 1; out.push(be); ext += edges[be].len;
+        bump(x); x = toOf(edges, next); bump(x); arcIn = next;
+        if (deg.get(x) > 1 || ext > EXTEND_M) break;   // met the rest of the ride, or far enough
+      }
+    }
+    return out;
+  }
 
   // ---- patches ----
   const parent = new Int32Array(n).map((_, i) => i);
@@ -497,12 +525,17 @@ function collect(A, B, D, directWalk, style, t0) {
     if (evals.has(k)) return evals.get(k);
     let roads = 0; for (const ci of set) roads += chunks[ci].len;
     if (Math.max(roads, directM) > D) { evals.set(k, null); return null; }   // can't possibly fit
-    const req = []; for (const ci of set) req.push(...chunks[ci].edges);
-    const walk = cover(A, B, req, style, 3);
-    tries++;
-    let total = 0; const seen = new Set(); let newM = 0;
-    for (const a of walk) { const e = edgeOf(a); total += edges[e].len; if (!seen.has(e)) { seen.add(e); newM += edges[e].newM; } }
-    const res = total <= D ? { set: new Set(set), walk, total, newM } : null;
+    const base = []; for (const ci of set) base.push(...chunks[ci].edges);
+    // streets ridden to their natural end first; the plain set if that doesn't fit
+    const ext = extendStreets(base);
+    let res = null;
+    for (const req of ext.length > base.length ? [ext, base] : [base]) {
+      const walk = cover(A, B, req, style, 3);
+      tries++;
+      let total = 0; const seen = new Set(); let newM = 0;
+      for (const a of walk) { const e = edgeOf(a); total += edges[e].len; if (!seen.has(e)) { seen.add(e); newM += edges[e].newM; } }
+      if (total <= D) { res = { set: new Set(set), walk, total, newM, req }; break; }
+    }
     evals.set(k, res);
     if (res && better(res, best)) best = res;
     const left = Math.max(0, Math.ceil((deadline - performance.now()) / 1000));
@@ -602,13 +635,13 @@ function collect(A, B, D, directWalk, style, t0) {
 
   // final ride for the best set, with the full set of stringings
   say("Finishing the route...");
-  const req = []; for (const ci of best.set) req.push(...chunks[ci].edges);
+  const req = best.req || [];
   let walk = cover(A, B, req, style);
   let total = 0; for (const a of walk) total += edges[edgeOf(a)].len;
   if (total > D) walk = best.walk;   // rare: keep the version that's known to fit
   // reachable new roads left out, for the map
-  const skipped = [];
-  chunks.forEach((c, ci) => { if (!best.set.has(ci)) for (const e of c.edges) skipped.push(edges[e].coords); });
+  const skipped = [], ridden = new Set(walk.map(edgeOf));
+  for (const e of pool) if (!ridden.has(e)) skipped.push(edges[e].coords);
   return { walk, poolNewM, tries, skipped };
 }
 function range(a, b) { const out = []; for (let i = a; i <= b; i++) out.push(i); return out; }
