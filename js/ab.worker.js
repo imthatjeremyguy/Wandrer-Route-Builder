@@ -203,7 +203,8 @@ function makeSearch(n) {
   let cur = 0;
   return {
     d: x => (stamp[x] === cur ? dist[x] : Infinity),
-    run(sources, mode, w, onSettle) {
+    /** banned: optional Uint8Array by edge; those roads are skipped */
+    run(sources, mode, w, onSettle, banned = null) {
       const S = mode === "all" ? NET.allStart : NET.outStart, Ar = mode === "all" ? NET.allArcs : NET.outArcs, E = NET.edges;
       cur++; heap.k.length = 0; heap.v.length = 0;
       for (const s of sources) { stamp[s] = cur; dist[s] = 0; prevArc[s] = -1; heap.push(0, s); }
@@ -212,7 +213,9 @@ function makeSearch(n) {
         if (dx > dist[x]) continue;
         if (onSettle && onSettle(x, dx)) return x;
         for (let p = S[x]; p < S[x + 1]; p++) {
-          const a = Ar[p], y = toOf(E, a), nd = dx + w(a);
+          const a = Ar[p];
+          if (banned && banned[a >> 1]) continue;
+          const y = toOf(E, a), nd = dx + w(a);
           if (stamp[y] !== cur || nd < dist[y]) { stamp[y] = cur; dist[y] = nd; prevArc[y] = a; heap.push(nd, y); }
         }
       }
@@ -256,6 +259,18 @@ function cover(A, B, req, style, tries = TRIES) {
   const bump = x => deg.set(x, (deg.get(x) || 0) + 1);
   for (const a of uses) { bump(edges[edgeOf(a)].u); bump(edges[edgeOf(a)].v); }
   const want = x => (x === A || x === B ? 1 : 0);
+  // loose ends: a junction the ride reaches by a single block although the street network goes on.
+  // Connecting one by going straight back down that block is an out-and-back with a U-turn, so
+  // pairing may not use those blocks (true dead ends are left alone: the only way out is back).
+  const only = new Map();
+  for (const a of uses) for (const x of [edges[edgeOf(a)].u, edges[edgeOf(a)].v]) only.set(x, only.has(x) ? -1 : edgeOf(a));
+  // How much extra distance avoiding one is worth comes from Smooth riding (Off: never avoided).
+  const uturnWorth = style.uturn || 0;
+  let banned = null;
+  if (uturnWorth) {
+    banned = new Uint8Array(edges.length);
+    for (const [x, e] of only) if (e >= 0 && NET.allStart[x + 1] - NET.allStart[x] > 1) banned[e] = 1;
+  }
   const odd = [...new Set([...deg.keys(), A, B])].filter(x => ((deg.get(x) || 0) & 1) !== want(x));
   const isOdd = new Set(odd), dist = new Map();
   const wantOdd = Math.min(K_NEAR, odd.length - 1);
@@ -264,7 +279,7 @@ function cover(A, B, req, style, tries = TRIES) {
     SS.run([s], "all", w, (x, d) => {
       if (x !== s && isOdd.has(x)) { list.push([x, d]); dist.set(s + ":" + x, d); }
       return list.length >= wantOdd || nearEnough(list, d);
-    });
+    }, banned);
     return list;
   });
   // greedy pairing, shortest first
@@ -275,7 +290,8 @@ function cover(A, B, req, style, tries = TRIES) {
   for (const [, s, t] of all) if (!mate.has(s) && !mate.has(t)) { mate.set(s, t); mate.set(t, s); }
   for (const s of odd) {   // anyone left: nearest unpaired
     if (mate.has(s)) continue;
-    const t = SS.run([s], "all", w, x => x !== s && isOdd.has(x) && !mate.has(x));
+    let t = SS.run([s], "all", w, x => x !== s && isOdd.has(x) && !mate.has(x), banned);
+    if (t < 0) t = SS.run([s], "all", w, x => x !== s && isOdd.has(x) && !mate.has(x));   // no other way
     if (t < 0) throw new Error("Couldn't pair up the junctions.");
     mate.set(s, t); mate.set(t, s); dist.set(s + ":" + t, SS.d(t));
   }
@@ -290,7 +306,16 @@ function cover(A, B, req, style, tries = TRIES) {
       else if (D(a, d) + D(b, c) < now - 1) { pairs[i] = [a, d]; pairs[j] = [b, c]; better = true; }
     }
   }
-  for (const [s, t] of pairs) { SS.run([s], "all", w, x => x === t); uses.push(...SS.path(t)); }
+  for (const [s, t] of pairs) {
+    // the connection that avoids retracing, unless it's longer than a U-turn is worth
+    let path = null;
+    if (banned && SS.run([s], "all", w, x => x === t, banned) >= 0) {
+      const cb = SS.d(t); path = SS.path(t);
+      SS.run([s], "all", w, x => x === t);
+      if (cb - SS.d(t) > uturnWorth) path = SS.path(t);
+    } else { SS.run([s], "all", w, x => x === t); path = SS.path(t); }
+    uses.push(...path);
+  }
 
   // steps 3 and 4 decide where the ride turns around, and take milliseconds, so try several
   // stringings (different direction choices and tie-breaks) and keep the best by Smooth riding cost
@@ -311,7 +336,8 @@ function cover(A, B, req, style, tries = TRIES) {
       const mine = [];
       SS.run([s], "legal", w, (x, d) => {
         if (x !== s && needIn.has(x)) { options.push([d, s, x]); mine.push([x, d]); }
-        return mine.length >= wantN || nearEnough(mine, d);
+        return mine.length >= wantN || nearEnough(mine, d) ||
+          (mine.length >= 1 && d > 3 * mine[0][1] + 2500);   // plenty past the nearest one
       });
     }
     options.sort((p, q) => p[0] - q[0]);
