@@ -10,8 +10,8 @@
   <link href="https://fonts.googleapis.com/css2?family=Overpass:wght@400;600;800&display=swap" rel="stylesheet">
   <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.css">
   <!-- bump APP_VERSION and the ?v= tags on every release so browsers fetch fresh files -->
-  <script>window.APP_VERSION = "35";</script>
-  <link rel="stylesheet" href="css/style.css?v=35">
+  <script>window.APP_VERSION = "37";</script>
+  <link rel="stylesheet" href="css/style.css?v=37">
 </head>
 <body>
   <main class="layout">
@@ -165,6 +165,7 @@
             <button class="btn btn-quiet btn-small" id="play-route" type="button">Play</button>
             <input type="range" id="play-pos" min="0" max="1000" value="0" aria-label="Position along the route">
             <select id="play-speed" aria-label="Play speed">
+              <option value="0.25">&frac14;&times;</option>
               <option value="0.5">&frac12;&times;</option>
               <option value="1" selected>1&times;</option>
               <option value="2">2&times;</option>
@@ -187,11 +188,11 @@
 
   <script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.js"></script>
   <script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
-  <script src="js/store.js?v=35"></script>
-  <script src="js/kmz.js?v=35"></script>
-  <script src="js/osm.js?v=35"></script>
-  <script src="js/gpx.js?v=35"></script>
-  <script src="js/plan.js?v=35"></script>
-  <script src="js/app.js?v=35"></script>
+  <script src="js/store.js?v=37"></script>
+  <script src="js/kmz.js?v=37"></script>
+  <script src="js/osm.js?v=37"></script>
+  <script src="js/gpx.js?v=37"></script>
+  <script src="js/plan.js?v=37"></script>
+  <script src="js/app.js?v=37"></script>
 </body>
 </html>
