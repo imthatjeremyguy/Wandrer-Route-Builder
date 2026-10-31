@@ -358,7 +358,7 @@
     $("route-new").textContent = `${fmtMi(r.newM)} mi`;
     $("route-eff").textContent = `${Math.round(100 * r.newM / r.totalM)}%`;
     $("route-repeat").textContent = `${fmtMi(r.repeatM)} mi`;
-    $("route-uturns").textContent = r.uturns ?? "-";
+    $("route-uturns").textContent = r.uturns === undefined ? "-" : r.uturns + (r.culdesacs ? ` (+${r.culdesacs} cul-de-sac)` : "");
     $("route-turns").textContent = r.turns ?? "-";
     $("route-time").textContent = `${(r.ms / 1000).toFixed(1)} s`;
     $("route-unit").textContent = r.mode === "ab" ? "mi ride" : "mi loop";

@@ -168,19 +168,22 @@ function route(startLL, endLL, style) {
 function measure(path, A, B) {
   const { edges } = NET;
   const coords = [], seen = new Map();
-  let total = 0, turns = 0, uturns = 0, unpavedM = 0;
+  let total = 0, turns = 0, uturns = 0, culdesacs = 0, unpavedM = 0;
   path.forEach((a, k) => {
     const ed = edges[edgeOf(a)], seg = a & 1 ? ed.coords.slice().reverse() : ed.coords;
     for (let i = coords.length ? 1 : 0; i < seg.length; i++) coords.push(seg[i]);
     total += ed.len;
     if (ed.unpaved) unpavedM += ed.len;
     seen.set(edgeOf(a), (seen.get(edgeOf(a)) || 0) + 1);
-    if (k) { const t = turnAngle(path[k - 1], a); if (t > UTURN) uturns++; else if (t > TURN) turns++; }
+    if (k) {
+      const t = turnAngle(path[k - 1], a), x = fromOf(edges, a);
+      if (t > UTURN) { if (NET.allStart[x + 1] - NET.allStart[x] <= 1) culdesacs++; else uturns++; } else if (t > TURN) turns++;
+    }
   });
   let newM = 0, repeat = 0;
   for (const [e, c] of seen) { newM += edges[e].newM; repeat += (c - 1) * edges[e].len; }
 
-  return { mode: "ab", coords, totalM: total, newM, repeatM: repeat, turns, uturns, unpavedM,
+  return { mode: "ab", coords, totalM: total, newM, repeatM: repeat, turns, uturns, culdesacs, unpavedM,
            snapAM: A.offM, snapBM: B.offM, tries: 1 };
 }
 

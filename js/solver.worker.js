@@ -219,7 +219,13 @@ function prepare(startLonLat, area, style) {
     return d;
   };
   const TURN = 35 * Math.PI / 180, UTURN = 150 * Math.PI / 180;
-  const turnCost = (x, a, b) => { const t = turnAngle(x, a, b); return t > UTURN ? style.uturn : t > TURN ? style.turn : 0; };
+  // a true dead end (one road in): turning around there is part of riding it, so it costs nothing
+  const deadEnd = new Uint8Array(n);
+  for (let x = 0; x < n; x++) if (UA.start[x + 1] - UA.start[x] <= 1) deadEnd[x] = 1;
+  const turnCost = (x, a, b) => {
+    const t = turnAngle(x, a, b);
+    return t > UTURN ? (deadEnd[x] ? 0 : style.uturn) : t > TURN ? style.turn : 0;
+  };
   const tc = style.turn || style.uturn ? turnCost : null;
   const SU = new Searcher(UA, n, tc), SD = new Searcher(DA, n, tc), SR = new Searcher(RA, n);
   const SX = new Searcher(DA, n, tc); // U-turn cleanup searches
@@ -247,7 +253,7 @@ function prepare(startLonLat, area, style) {
     const ed = edges[i];
     return [i, Math.min(fwd[ed.u] + back[ed.u], fwd[ed.v] + back[ed.v])];
   }));
-  return { n, edges, lonlat, allowed, UA, DA, SU, SD, SX, start, penalty, style, turnAngle, TURN, UTURN,
+  return { n, edges, lonlat, allowed, UA, DA, SU, SD, SX, start, penalty, style, turnAngle, TURN, UTURN, deadEnd, tc,
            dropped, reqReach: req, rt, areaNewM: req.reduce((s, i) => s + edges[i].newM, 0), unpavedSkippedM };
 }
 
@@ -288,15 +294,22 @@ function withRoads(G, req) {
   const odd = []; for (let x = 0; x < n; x++) if (deg[x] % 2) odd.push(x);
   const isOdd = new Uint8Array(n); odd.forEach(x => (isOdd[x] = 1));
   const oddIdx = new Map(odd.map((x, i) => [x, i]));
+  // loose ends: reached by a single block of the ride. A connection that starts (or ends) by riding
+  // straight back down that block is a U-turn at an intersection, so the search is told which block
+  // the ride arrives on and charges that turn like any other (cul-de-sacs stay free).
+  const lone = new Int32Array(n).fill(-1);
+  for (const [a, b, e] of base) for (const x of [a, b]) lone[x] = deg[x] === 1 ? e : lone[x];
+  const tc = G.tc;
+  const endTurn = (S, x) => (tc && lone[x] >= 0 && S.prevE[x] >= 0 ? tc(x, S.prevE[x], lone[x]) : 0);
   say(`Measuring ${odd.length} dead ends and junctions...`);
   const uDist = new Map(); // key i*M+j -> distance (both orders)
   const M = odd.length + 1;
   const uCand = odd.map((s, i) => {
     const list = [];
     SU.run([s], (x, d) => {
-      if (x !== s && isOdd[x]) list.push([oddIdx.get(x), d]);
+      if (x !== s && isOdd[x]) list.push([oddIdx.get(x), d + endTurn(SU, x)]);
       return list.length >= K_NEAR || d > NEAR_CAP_M || nearEnough(list, d);
-    });
+    }, lone[s]);
     for (const [j, d] of list) { uDist.set(i * M + j, d); uDist.set(j * M + i, d); }
     return list;
   });
@@ -314,7 +327,7 @@ function withRoads(G, req) {
     dCand.set(s, list);
   }
 
-  return { ...G, req, base, odd, uCand, uDist, M, dCand, newAvail, pathU: new Map(), pathD: new Map() };
+  return { ...G, req, base, odd, uCand, uDist, M, dCand, newAvail, lone, pathU: new Map(), pathD: new Map() };
 }
 
 // ---------- distance budget: collect the most new road within a ride distance ----------
@@ -735,7 +748,7 @@ function attempt(C, rng) {
     const left = []; for (let i = 0; i < odd.length; i++) if (mate[i] < 0) left.push(i);
     while (left.length > 1) {
       const i = left.shift(); const targets = new Set(left.map(j => odd[j]));
-      const hit = SU.run([odd[i]], x => targets.has(x));
+      const hit = SU.run([odd[i]], x => targets.has(x), C.lone[odd[i]]);
       if (hit < 0) continue;
       const j = left.indexOf(odd.indexOf(hit)); const jj = left[j]; left.splice(j, 1);
       const d = SU.d(hit); uDist.set(i * M + jj, d); uDist.set(jj * M + i, d);
@@ -761,7 +774,7 @@ function attempt(C, rng) {
     const j = mate[i]; if (j < i) continue; // each pair once, smaller index first
     const key = i * M + j;
     let p = C.pathU.get(key);
-    if (!p) { SU.run([odd[i]], x => x === odd[j]); p = SU.path(odd[j]); C.pathU.set(key, p); }
+    if (!p) { SU.run([odd[i]], x => x === odd[j], C.lone[odd[i]]); p = SU.path(odd[j]); C.pathU.set(key, p); }
     for (const st of p) items.push(st);
   }
 
@@ -823,9 +836,87 @@ function attempt(C, rng) {
   const steps = seq.filter(k => k >= 0);
   if (steps.length !== arcs.length) throw new Error("Couldn't join every road into one loop. Try a smaller area.");
 
+  // same roads, better order: pair each junction's ways in and out for the fewest turns, then rejoin
   let walk = steps.map(k => arcs[k]);
+  const smooth = stringSmoothly(C, arcs, start, rng);
+  if (smooth) walk = smooth;
   if (C.style.uturn > 0) walk = cleanupUturns(C, walk);
   return score(C, walk);
+}
+
+/** Same roads, better order. At every junction, pair each way in with a way out so the ride turns as
+ *  little as possible (a U-turn at an intersection only when there's no other way on). Following those
+ *  pairings gives a few separate loops; they're joined at shared junctions, choosing the joins that
+ *  add the least turning. Distance never changes. Returns null if anything doesn't add up. */
+function stringSmoothly(C, arcs, start, rng) {
+  const { turnAngle, TURN, UTURN, deadEnd } = C;
+  const cost = (x, a, b) => {
+    const t = turnAngle(x, a, b);
+    return (t > UTURN ? (deadEnd[x] ? 0 : 1000) : t > TURN ? 30 + 20 * t : 10 * t) + (rng ? rng() * 5 : 0);
+  };
+  const ins = new Map(), outs = new Map();
+  arcs.forEach(([a, b], k) => {
+    if (!outs.has(a)) outs.set(a, []); outs.get(a).push(k);
+    if (!ins.has(b)) ins.set(b, []); ins.get(b).push(k);
+  });
+  const next = new Int32Array(arcs.length).fill(-1);   // arc k is followed by arc next[k]
+  // 1. per junction: cheapest pairing of ways in to ways out
+  for (const [x, I] of ins) {
+    const O = outs.get(x) || [];
+    if (O.length !== I.length) return null;
+    const m = I.length;
+    const c = I.map(i => O.map(o => cost(x, arcs[i][2], arcs[o][2])));
+    let assign;
+    if (m <= 7) {   // exact: try every pairing (small junctions)
+      let best = Infinity; const used = new Uint8Array(m), cur = [];
+      const rec = (r, sum) => {
+        if (sum >= best) return;
+        if (r === m) { best = sum; assign = cur.slice(); return; }
+        for (let o = 0; o < m; o++) if (!used[o]) { used[o] = 1; cur[r] = o; rec(r + 1, sum + c[r][o]); used[o] = 0; }
+      };
+      rec(0, 0);
+    } else {        // big junction: greedy cheapest first
+      assign = new Array(m).fill(-1); const usedO = new Uint8Array(m);
+      const all = []; for (let r = 0; r < m; r++) for (let o = 0; o < m; o++) all.push([c[r][o], r, o]);
+      all.sort((p, q) => p[0] - q[0]);
+      for (const [, r, o] of all) if (assign[r] < 0 && !usedO[o]) { assign[r] = o; usedO[o] = 1; }
+    }
+    for (let r = 0; r < m; r++) next[I[r]] = O[assign[r]];
+  }
+  // 2. loops: follow the pairings
+  const loopOf = new Int32Array(arcs.length).fill(-1); let loops = 0;
+  for (let k = 0; k < arcs.length; k++) {
+    if (loopOf[k] >= 0) continue;
+    for (let q = k; loopOf[q] < 0; q = next[q]) { if (q < 0) return null; loopOf[q] = loops; }
+    loops++;
+  }
+  // 3. join loops: at a junction, swapping the exits of two pairings from different loops merges them
+  const parent = Int32Array.from({ length: loops }, (_, i) => i);
+  const find = v => { while (parent[v] !== v) v = parent[v] = parent[parent[v]]; return v; };
+  let left = loops;
+  while (left > 1) {
+    let best = null;
+    for (const [x, I] of ins) {
+      if (I.length < 2) continue;
+      for (let p = 0; p < I.length; p++) for (let q = p + 1; q < I.length; q++) {
+        const a = I[p], b = I[q];
+        if (find(loopOf[a]) === find(loopOf[b])) continue;
+        const d = cost(x, arcs[a][2], arcs[next[b]][2]) + cost(x, arcs[b][2], arcs[next[a]][2])
+                - cost(x, arcs[a][2], arcs[next[a]][2]) - cost(x, arcs[b][2], arcs[next[b]][2]);
+        if (!best || d < best.d) best = { d, a, b };
+      }
+    }
+    if (!best) return null;   // loops that share no junction (shouldn't happen)
+    const t = next[best.a]; next[best.a] = next[best.b]; next[best.b] = t;
+    parent[find(loopOf[best.a])] = find(loopOf[best.b]); left--;
+  }
+  // 4. read the ride off, starting at the start
+  const first = (outs.get(start) || [])[0];
+  if (first === undefined) return null;
+  // begin with the arc whose predecessor arrives at the start, so the ride starts there
+  const walk = []; let k = first;
+  for (let n = 0; n < arcs.length; n++) { walk.push(arcs[k]); k = next[k]; }
+  return k === first ? walk : null;
 }
 
 /** Replace U-turns at intersections that have another way out with a loop back,
@@ -863,20 +954,20 @@ function cleanupUturns(C, walk) {
 
 /** Distance, repeats, turns and U-turns of a walk, and its cost under the style. */
 function score(C, walk) {
-  const { edges, style, turnAngle, TURN, UTURN } = C;
-  const count = new Map(); let total = 0, uturns = 0, turns = 0;
+  const { edges, style, turnAngle, TURN, UTURN, deadEnd } = C;
+  const count = new Map(); let total = 0, uturns = 0, turns = 0, culdesacs = 0;
   for (let i = 0; i < walk.length; i++) {
     const [, b, e] = walk[i];
     total += edges[e].len; count.set(e, (count.get(e) || 0) + 1);
     if (i < walk.length - 1) {
       const t = turnAngle(b, e, walk[i + 1][2]);
-      if (t > UTURN) uturns++; else if (t > TURN) turns++;
+      if (t > UTURN) { if (deadEnd && deadEnd[b]) culdesacs++; else uturns++; } else if (t > TURN) turns++;
     }
   }
   let repeat = 0, newM = 0;
   for (const [e, c] of count) { repeat += (c - 1) * edges[e].len; newM += edges[e].newM; }
   const cost = total + (style.repeat || 0) * repeat + (style.turn || 0) * turns + (style.uturn || 0) * uturns;
-  return { walk, total, repeat, newM, uturns, turns, cost };
+  return { walk, total, repeat, newM, uturns, turns, culdesacs, cost };
 }
 
 /** Make in-degree equal out-degree at every node by adding the cheapest legal paths
@@ -993,7 +1084,7 @@ function pack(C, r, ms, tries) {
     const inSet = new Set(C.req);
     skipped = C.reqReach.filter(i => !inSet.has(i)).map(i => edges[i].coords);
   }
-  return { coords, totalM: r.total, newM: r.newM, repeatM: r.repeat, uturns: r.uturns, turns: r.turns, newAvailM: C.newAvail,
+  return { coords, totalM: r.total, newM: r.newM, repeatM: r.repeat, uturns: r.uturns, culdesacs: r.culdesacs, turns: r.turns, newAvailM: C.newAvail,
            areaNewM: C.areaNewM, budgetM: C.budgetM || 0, skipped, goal: C.goal || { type: "all" }, hasArea: !!C.hasArea,
            wrongWay, dropped: C.dropped, startLonLat: lonlat[start], ms: Math.round(ms), tries,
            unpavedSkippedM: C.unpavedSkippedM || 0 };

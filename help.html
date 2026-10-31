@@ -123,8 +123,8 @@
 
         <h3>Good to know</h3>
         <ul>
-          <li>On every setting, the route goes straight through an intersection when that's as good as turning, which builds natural ladders and long straight runs.</li>
-          <li>True dead ends (a cul-de-sac with no way through) always need a U-turn. Those count in the stats on every setting.</li>
+          <li>On every setting, once the roads are chosen, the ride is put in the order that turns least: at each junction it pairs every way in with the straightest way out, so it goes through intersections instead of turning around at them whenever the same roads allow it. That builds natural ladders and long straight runs and never adds distance.</li>
+          <li>True dead ends (a cul-de-sac with no way through) always need a U-turn. Riding them is the point, so they never count against a route; the stats list them separately.</li>
           <li>Loops re-ride a little road you've already done this ride. That's expected, and it's why <em>Ridden twice</em> can go up a bit as U-turns go down.</li>
           <li>The extra cost of turns and U-turns only applies while planning. The miles shown are always real miles.</li>
         </ul>
@@ -189,7 +189,7 @@
           <dt>New road</dt><dd>Miles of untraveled road the route collects, including any it happens to ride outside the area on the way in or out.</dd>
           <dt>Ride that's new</dt><dd>New road as a share of the whole ride. Higher is more efficient.</dd>
           <dt>Ridden twice</dt><dd>Miles of road the route rides more than once.</dd>
-          <dt>U-turns</dt><dd>Times the route turns around, including at true dead ends.</dd>
+          <dt>U-turns</dt><dd>Times the route turns around at an intersection. Turning around at the end of a cul-de-sac or other true dead end is part of riding it, so those are listed separately ("+3 cul-de-sac") and never count against a route.</dd>
           <dt>Turns</dt><dd>Turns of more than about 35 degrees. Fewer means longer straight runs.</dd>
           <dt>Solve time</dt><dd>How long the route took to build, or how long Optimize ran.</dd>
         </dl>
