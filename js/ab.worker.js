@@ -38,8 +38,7 @@ self.onmessage = e => {
         const c = collect(A.node, B.node, r.distanceM, r.path, st, t0);
         out = measure(c.walk, A, B);
         Object.assign(out, { distanceM: r.distanceM, directM: r.totalM, directNewM: r.newM, poolNewM: c.poolNewM,
-                             tries: c.tries, skipped: c.skipped, strandedTakenM: c.strandedTakenM,
-                             strandedLeft: c.strandedLeft, strandM: c.strandM });
+                             tries: c.tries, skipped: c.skipped });
       }
       out.ms = Math.round(performance.now() - t0);
       self.postMessage({ result: out, final: true });
@@ -471,10 +470,7 @@ function eulerPath(items, A, B, directed, rng = null) {
 const MIN_NEW_M = 15;     // a block needs this much new road to be worth a detour (same as Loop)
 const CELL_DEG = 0.004;   // patch grid
 const PATCH_M = 600;
-const EXTEND_M = 1200;
-const ISO_CAP = 1500;     // stranded: how far (one way) a piece can be from other new road before we stop counting
-const STRAND_W = 1;       // charge per metre of that distance (1 = about half the old-mile round trip later)
-const K_NB = 8;           // neighbouring patches remembered per patch    // how far a street is followed past its patch to reach a natural end      // rough detour to reach one more ~300 m patch (same idea as Loop)
+const EXTEND_M = 1200;    // how far a street is followed past its patch to reach a natural end      // rough detour to reach one more ~300 m patch (same idea as Loop)
 
 function collect(A, B, D, directWalk, style, t0) {
   const { edges, nodes } = NET, n = nodes.length, skip = !!style.skipUnpaved;
@@ -542,66 +538,6 @@ function collect(A, B, D, directWalk, style, t0) {
   const chunks = [...byKey.values()];
   for (const c of chunks) { c.cx = c.sx / c.newM * kx; c.cy = c.sy / c.newM * MPD; }
 
-  // ---- stranded pieces ----
-  // Each patch's nearest neighbouring new road (other patches, or new road out of reach of this ride),
-  // from one search spreading out from every new road at once. A patch the ride leaves behind is
-  // "stranded" when the ride takes its neighbours: getting it later costs extra old miles.
-  say("Checking which new roads would be stranded...");
-  const strandW = style.strandW ?? STRAND_W;
-  const nbs = chunks.map(() => new Map());   // patch -> (neighbour patch, or -2 for out of reach) -> distance
-  {
-    const lab = new Int32Array(n).fill(-1), dv = new Float64Array(n).fill(Infinity), heap = new Heap();
-    chunks.forEach((c, ci) => { for (const x of c.nodes) if (lab[x] === -1) { lab[x] = ci; dv[x] = 0; heap.push(0, x); } });
-    edges.forEach((ed, i) => {
-      if (inPool[i] || ed.newM < MIN_NEW_M || (skip && ed.unpaved)) return;
-      for (const x of [ed.u, ed.v]) if (lab[x] === -1) { lab[x] = -2; dv[x] = 0; heap.push(0, x); }
-    });
-    while (heap.size) {
-      const d = heap.topKey(), x = heap.pop();
-      if (d > dv[x] || d > ISO_CAP) continue;
-      for (let p = NET.allStart[x]; p < NET.allStart[x + 1]; p++) {
-        const a = NET.allArcs[p], y = toOf(edges, a), nd = d + w(a);
-        if (nd < dv[y]) { dv[y] = nd; lab[y] = lab[x]; heap.push(nd, y); }
-      }
-    }
-    edges.forEach((ed, i) => {
-      const a = lab[ed.u], b = lab[ed.v];
-      if (a === -1 || b === -1 || a === b) return;
-      const c = dv[ed.u] + ed.len * (skip && ed.unpaved ? UNPAVED_W : 1) + dv[ed.v];
-      if (c > ISO_CAP) return;
-      if (a >= 0 && !(nbs[a].get(b) <= c)) nbs[a].set(b, c);
-      if (b >= 0 && !(nbs[b].get(a) <= c)) nbs[b].set(a, c);
-    });
-  }
-  const nbList = nbs.map(m => [...m].sort((p, q) => p[1] - q[1]).slice(0, K_NB));
-  const rev = chunks.map(() => []);
-  nbList.forEach((l, ci) => l.forEach(([p]) => { if (p >= 0) rev[p].push(ci); }));
-  const iso0 = nbList.map(l => (l.length ? l[0][1] : ISO_CAP));
-  /** distance from patch ci to the nearest new road this ride doesn't take */
-  const iso = (ci, taken) => { for (const [p, d] of nbList[ci]) if (p < 0 || !taken.has(p)) return d; return ISO_CAP; };
-  /** patches the ride actually takes (most of their new road ridden) */
-  const takenBy = walk => {
-    const rid = new Set(walk.map(edgeOf)), t = new Set();
-    chunks.forEach((c, ci) => { let r = 0; for (const e of c.edges) if (rid.has(e)) r += edges[e].newM; if (r >= 0.8 * c.newM) t.add(ci); });
-    return t;
-  };
-  /** Old miles (one way) the ride leaves for later: every piece left behind costs how far it is from
-   *  other unridden new road afterwards. Pieces inside a big untouched area cost almost nothing; a lone
-   *  cul-de-sac or loop costs a lot, and taking it removes that cost. Measured against riding nothing
-   *  (pieces whose neighbours the ride doesn't touch are unchanged, so they're skipped). */
-  const strandCost = taken => {
-    let cost = 0; const seen = new Set();
-    for (const t of taken) {
-      cost -= iso0[t];                                  // taken: its isolation is no longer left for later
-      for (const c of rev[t]) {
-        if (taken.has(c) || seen.has(c)) continue; seen.add(c);
-        cost += iso(c, taken) - iso0[c];                // left behind, more isolated than before
-      }
-    }
-    return cost;
-  };
-  const scoreOf = res => res.newM - strandW * res.strand;
-
   // ---- evaluation ----
   const evals = new Map();
   let best = null, tries = 0;
@@ -609,8 +545,7 @@ function collect(A, B, D, directWalk, style, t0) {
   const deadline = t0 + Math.min(30, Math.max(12, 10 + poolMi / 50)) * 1000;
   const timeLeft = () => performance.now() < deadline;
   const keyOf = set => [...set].sort((a, b) => a - b).join(",");
-  // better ride: more new road, less left stranded for later (then shorter)
-  const better = (a, b) => !b || scoreOf(a) > scoreOf(b) + 1 || (Math.abs(scoreOf(a) - scoreOf(b)) <= 1 && a.total < b.total - 1);
+  const better = (a, b) => !b || a.newM > b.newM + 1 || (Math.abs(a.newM - b.newM) <= 1 && a.total < b.total - 1);
   function evaluate(set) {
     const k = keyOf(set);
     if (evals.has(k)) return evals.get(k);
@@ -625,11 +560,7 @@ function collect(A, B, D, directWalk, style, t0) {
       tries++;
       let total = 0; const seen = new Set(); let newM = 0;
       for (const a of walk) { const e = edgeOf(a); total += edges[e].len; if (!seen.has(e)) { seen.add(e); newM += edges[e].newM; } }
-      if (total <= D) {
-        const taken = takenBy(walk);
-        res = { set: new Set(set), walk, total, newM, req, taken, strand: strandCost(taken) };
-        break;
-      }
+      if (total <= D) { res = { set: new Set(set), walk, total, newM, req }; break; }
     }
     evals.set(k, res);
     if (res && better(res, best)) best = res;
@@ -651,9 +582,7 @@ function collect(A, B, D, directWalk, style, t0) {
         if (d === Infinity) return;
         const est = 2 * d + c.len;
         if (est * 0.6 > room) return;   // clearly won't fit
-        // taking a piece the ride is stranding also saves the trip back for it later
-        const relief = cur.taken ? strandW * iso(ci, cur.taken) : 0;
-        cand.push([(c.newM + relief) / est, ci]);
+        cand.push([c.newM / est, ci]);
       });
       cand.sort((a, b) => b[0] - a[0]);
       let added = false;
@@ -671,7 +600,6 @@ function collect(A, B, D, directWalk, style, t0) {
   const seenD = new Set(); let directNew = 0;
   for (const a of directWalk) { const e = edgeOf(a); if (!seenD.has(e)) { seenD.add(e); directNew += edges[e].newM; } }
   const base = { set: new Set(), walk: directWalk, total: directM, newM: directNew };
-  base.taken = takenBy(directWalk); base.strand = strandCost(base.taken);
   evals.set("", base); best = base;
   grow(base);
 
@@ -740,20 +668,7 @@ function collect(A, B, D, directWalk, style, t0) {
   // reachable new roads left out, for the map
   const skipped = [], ridden = new Set(walk.map(edgeOf));
   for (const e of pool) if (!ridden.has(e)) skipped.push(edges[e].coords);
-  // stranded pieces: taken ones that would otherwise have been left isolated, and ones still left behind
-  const taken = takenBy(walk);
-  let strandedTakenM = 0, strandedLeft = 0;
-  for (const ci of taken) {
-    const without = new Set(taken); without.delete(ci);
-    if (iso(ci, without) >= 300) strandedTakenM += chunks[ci].newM;
-  }
-  // left behind within a block of the ride and at least 300 m from other unridden new road
-  SS.run([...new Set(walk.flatMap(a => [fromOf(edges, a), toOf(edges, a)]))], "all", w, (x, d) => d > 200);
-  chunks.forEach((c, ci) => {
-    if (taken.has(ci) || iso(ci, taken) < 300) return;
-    for (const x of c.nodes) if (SS.d(x) <= 200) { strandedLeft++; break; }
-  });
-  return { walk, poolNewM, tries, skipped, strandedTakenM, strandedLeft, strandM: strandCost(taken) };
+  return { walk, poolNewM, tries, skipped };
 }
 function range(a, b) { const out = []; for (let i = a; i <= b; i++) out.push(i); return out; }
 

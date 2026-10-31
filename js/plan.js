@@ -368,7 +368,6 @@
     if (r.mode === "ab") {
       if (r.poolNewM !== undefined) {
         notes.push(`Collects ${fmtMi(r.newM)} new mi within your ${fmtMi(r.distanceM)} mi ride (the direct route: ${fmtMi(r.directNewM)} new mi in ${fmtMi(r.directM)} mi).`);
-        if (r.strandedTakenM >= 160) notes.push(`That includes ${fmtMi(r.strandedTakenM)} mi of stray pieces (cul-de-sacs, short loops) that would cost old miles to come back for.`);
         notes.push(`${fmtMi(r.poolNewM)} new mi are within reach of this ride.${r.skipped && r.skipped.length ? " Faded red roads were left out." : ""}`);
       } else notes.push(`Most direct route from A to B. It happens to cover ${fmtMi(r.newM)} new mi.`);
       if (r.unpavedM >= 16) notes.push(`Includes ${fmtMi(r.unpavedM)} mi of unpaved road${$("skip-unpaved").checked ? " (no paved way round)" : ""}.`);
