@@ -7,7 +7,7 @@
   let map, network = null, worker = null, start = null, area = null, route = null;
   let startMarker = null, areaRect = null, routeLine = null, playDot = null, playTimer = null, mode = null;
   // ride type: "loop" (the loop solver) or "ab" (A to B, its own logic, being built)
-  let rideMode = "loop", end = null, endMarker = null, abWorker = null;
+  let rideMode = "loop", end = null, endMarker = null, abWorker = null, checkWorker = null, missedLayer = null;
   const pinIcon = (letter, cls = "") => L.divIcon({ className: "start-pin " + cls, html: `<span>${letter}</span>`, iconSize: [28, 28], iconAnchor: [14, 14] });
 
   function say(text, isError) { $("plan-msg").textContent = text || ""; $("plan-msg").classList.toggle("error", !!isError); }
@@ -328,6 +328,27 @@
       style: { ...(STYLES[$("repeat-penalty").value] || STYLES.some), skipUnpaved: $("skip-unpaved").checked } });
   }
 
+  // ---------- check your own route (GPX): its own worker (js/check.worker.js) ----------
+  async function checkGpx(file) {
+    if (!file || !network) return;
+    cancelMode(); clearRoute();
+    let coords;
+    try {
+      const doc = new DOMParser().parseFromString(await file.text(), "application/xml");
+      coords = [...doc.querySelectorAll("trkpt, rtept")].map(p => [parseFloat(p.getAttribute("lon")), parseFloat(p.getAttribute("lat"))])
+        .filter(([x, y]) => isFinite(x) && isFinite(y));
+    } catch (err) { say("Couldn't read that GPX file.", true); return; }
+    if (coords.length < 2) { say("That GPX file has no track in it.", true); return; }
+    if (!checkWorker) {
+      checkWorker = new Worker("js/check.worker.js?v=" + (window.APP_VERSION || "0"));
+      checkWorker.postMessage({ type: "network", nodes: network.nodes, edges: network.edges });
+      checkWorker.onmessage = onWorker;
+    }
+    setBusy(true);
+    say("Checking your route...");
+    checkWorker.postMessage({ type: "check", coords, skipUnpaved: $("skip-unpaved").checked });
+  }
+
   function optimize() {
     if (optimizing) { worker.postMessage({ type: "stop" }); return; }
     if (!route) return;
@@ -361,10 +382,23 @@
     $("route-uturns").textContent = r.uturns === undefined ? "-" : r.uturns + (r.culdesacs ? ` (+${r.culdesacs} cul-de-sac)` : "");
     $("route-turns").textContent = r.turns ?? "-";
     $("route-time").textContent = `${(r.ms / 1000).toFixed(1)} s`;
-    $("route-unit").textContent = r.mode === "ab" ? "mi ride" : "mi loop";
+    $("route-unit").textContent = r.mode === "check" ? "mi route" : r.mode === "ab" ? "mi ride" : "mi loop";
+    $("optimize-route").closest(".opt-row").hidden = r.mode === "check";
+    if (missedLayer) { map.removeLayer(missedLayer); missedLayer = null; }
+    if (r.missed && r.missed.length) {   // new roads the checked route passes close to but doesn't ride
+      missedLayer = L.layerGroup(r.missed.map(c => L.polyline(c.map(([x, y]) => [y, x]),
+        { color: "#f2b705", weight: 7, opacity: 0.9, interactive: false }))).addTo(map);
+    }
     stopPlay();
     if (!keepView) $("route-result").scrollIntoView({ block: "nearest", behavior: matchMedia("(prefers-reduced-motion: reduce)").matches ? "auto" : "smooth" });
     const notes = [];
+    if (r.mode === "check") {
+      notes.push(`Your route covers ${fmtMi(r.newM)} new mi.`);
+      notes.push(r.missedM >= 16 ? `It passes within about a block of ${fmtMi(r.missedM)} new mi it doesn't ride (highlighted yellow).` : "It doesn't pass close to any new roads it skips.");
+      if (r.matchedShare < 0.6) notes.push("Parts of the track didn't line up with the road map, so these numbers may be off.");
+      say(notes.join(" "));
+      return;
+    }
     if (r.mode === "ab") {
       if (r.poolNewM !== undefined) {
         notes.push(`Collects ${fmtMi(r.newM)} new mi within your ${fmtMi(r.distanceM)} mi ride (the direct route: ${fmtMi(r.directNewM)} new mi in ${fmtMi(r.directM)} mi).`);
@@ -397,6 +431,7 @@
     firstTotal = null; firstNew = null;
     if (routeLine) { map.removeLayer(routeLine); routeLine = null; }
     if (skippedLayer) { map.removeLayer(skippedLayer); skippedLayer = null; }
+    if (missedLayer) { map.removeLayer(missedLayer); missedLayer = null; }
     route = null; $("route-result").hidden = true;
   }
 
@@ -492,6 +527,7 @@
       $("clear-start").addEventListener("click", clearStart);
       $("clear-end").addEventListener("click", clearEnd);
       $("build-ab").addEventListener("click", buildAB);
+      $("check-gpx").addEventListener("change", e => { checkGpx(e.target.files[0]); e.target.value = ""; });
       Store.get("ab-budget").then(v => { if (v) $("ab-budget").value = v; });
       $("ab-budget").addEventListener("change", e => {
         if (!(parseFloat(e.target.value) > 0)) e.target.value = "";
@@ -540,6 +576,7 @@
     setNetwork(net) {
       network = net;
       if (abWorker) { abWorker.terminate(); abWorker = null; }
+      if (checkWorker) { checkWorker.terminate(); checkWorker = null; }
       if (worker) worker.terminate();
       worker = new Worker("js/solver.worker.js?v=" + (window.APP_VERSION || "0"));
       worker.postMessage({ type: "network", nodes: net.nodes, edges: net.edges });
