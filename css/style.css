@@ -144,6 +144,7 @@ select:focus-visible { outline: 3px solid var(--paint); outline-offset: 2px; }
 #build-ab { width: 100%; margin: 4px 0 10px; }
 .ab-note { font-size: 0.9rem; }
 .check-row { margin: -4px 0 14px; }
+.check-row label { display: block; width: 100%; text-align: center; padding-left: 8px; padding-right: 8px; white-space: nowrap; }   /* same size as Build route */
 #check-gpx:focus-visible + label, .check-row label:focus-visible { outline: 3px solid var(--paint); outline-offset: 2px; }
 .start-pin.end-pin span { background: #fff; color: var(--sign); border-color: var(--sign); }
 .num-row { display: grid; grid-template-columns: 7.5em 7em auto; align-items: center; gap: 8px; margin-bottom: 8px; color: var(--sign-ink-soft); }
